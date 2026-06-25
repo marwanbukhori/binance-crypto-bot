@@ -1,0 +1,7 @@
+/bin/
+/bot
+*.db
+*.db-wal
+*.db-shm
+.env
+analyze_test.go
