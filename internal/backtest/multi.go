@@ -119,7 +119,9 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 					deployed += ps.order.Qty * ps.order.Price
 				}
 			}
-			acct := risk.Account{Equity: cash, FreeUSDT: cash - deployed, DeployedNotional: deployed, OpenPositions: len(open)}
+			// cash is already the free USDT (buys subtract their cost); deployed is the
+			// mark value of holdings, so total equity = cash + deployed and free = cash.
+			acct := risk.Account{Equity: cash + deployed, FreeUSDT: cash, DeployedNotional: deployed, OpenPositions: len(open)}
 			in := domain.Intent{Symbol: sym, Action: domain.Buy, Price: c.Close, StopDist: sig.StopDist, TPDist: sig.TPDist, Reason: sig.Reason, Time: c.CloseTime}
 			if o, err := g.Evaluate(in, acct, f); err == nil {
 				cash -= o.Qty*o.Price + feeRate*o.Qty*o.Price
