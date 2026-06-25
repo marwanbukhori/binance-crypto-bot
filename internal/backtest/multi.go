@@ -42,7 +42,7 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 		}
 		return eq
 	}
-	closeTrade := func(sym string, ps *posState, exitPx float64, ts int64, reason string) {
+	closeTrade := func(sym string, ps *posState, exitPx float64, ts int64, reason string) float64 {
 		proceeds := ps.order.Qty*exitPx - feeRate*ps.order.Qty*exitPx
 		entryCost := ps.order.Qty*ps.order.Price + feeRate*ps.order.Qty*ps.order.Price
 		net := proceeds - entryCost
@@ -54,6 +54,7 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 			rep.Wins++
 		}
 		delete(open, sym)
+		return net
 	}
 
 	for i := 1; i <= maxLen; i++ {
@@ -69,11 +70,14 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 			// 1) Manage open position: intrabar TP/SL from the candle after entry.
 			if ps, ok := open[sym]; ok {
 				if guard.ShouldFlatten() {
-					closeTrade(sym, ps, c.Close, c.CloseTime, "flatten")
+					if net := closeTrade(sym, ps, c.Close, c.CloseTime, "flatten"); net < 0 {
+						cool.NoteLoss(sym, i-1)
+					}
 				} else if i-1 > ps.entryIdx {
 					if kind, px := CheckExit(ps.order, c); kind == ExitStop {
-						closeTrade(sym, ps, px, c.CloseTime, "SL")
-						cool.NoteLoss(sym, i-1)
+						if net := closeTrade(sym, ps, px, c.CloseTime, "SL"); net < 0 {
+							cool.NoteLoss(sym, i-1)
+						}
 					} else if kind == ExitTP {
 						closeTrade(sym, ps, px, c.CloseTime, "TP")
 					}
@@ -95,7 +99,9 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 			}
 			if sig.Action == domain.Sell {
 				if ps, ok := open[sym]; ok {
-					closeTrade(sym, ps, c.Close, c.CloseTime, "rule")
+					if net := closeTrade(sym, ps, c.Close, c.CloseTime, "rule"); net < 0 {
+						cool.NoteLoss(sym, i-1)
+					}
 				}
 				continue
 			}
@@ -103,7 +109,17 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 			if !guard.AllowEntry() || cool.Blocked(sym, i-1) {
 				continue
 			}
-			acct := risk.Account{Equity: cash, FreeUSDT: cash, OpenPositions: len(open)}
+			// I1: compute deployed notional from all currently open positions.
+			var deployed float64
+			for s, ps := range open {
+				scs := candles[s]
+				if i-1 < len(scs) {
+					deployed += ps.order.Qty * scs[i-1].Close
+				} else {
+					deployed += ps.order.Qty * ps.order.Price
+				}
+			}
+			acct := risk.Account{Equity: cash, FreeUSDT: cash - deployed, DeployedNotional: deployed, OpenPositions: len(open)}
 			in := domain.Intent{Symbol: sym, Action: domain.Buy, Price: c.Close, StopDist: sig.StopDist, TPDist: sig.TPDist, Reason: sig.Reason, Time: c.CloseTime}
 			if o, err := g.Evaluate(in, acct, f); err == nil {
 				cash -= o.Qty*o.Price + feeRate*o.Qty*o.Price

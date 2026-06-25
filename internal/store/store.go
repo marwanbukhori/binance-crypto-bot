@@ -81,6 +81,18 @@ func (s *Store) RecordPnLSnapshot(ts int64, equity, realized float64) error {
 	return err
 }
 
+func (s *Store) CountSignals() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM signals`).Scan(&n)
+	return n, err
+}
+
+func (s *Store) CountPnLSnapshots() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM pnl_snapshots`).Scan(&n)
+	return n, err
+}
+
 func (s *Store) SaveKillState(killed bool, reason string, ts int64) error {
 	k := 0
 	if killed {

@@ -159,12 +159,16 @@ func MACD(vals []float64, fast, slow, signal int) (macd, sig, hist []float64) {
 // Bollinger returns the middle (SMA), upper, and lower bands using population stddev.
 func Bollinger(vals []float64, period int, k float64) (mid, upper, lower []float64) {
 	n := len(vals)
-	mid = SMA(vals, period)
+	mid = make([]float64, n)
 	upper = make([]float64, n)
 	lower = make([]float64, n)
 	for i := range vals {
-		upper[i], lower[i] = math.NaN(), math.NaN()
+		mid[i], upper[i], lower[i] = math.NaN(), math.NaN(), math.NaN()
 	}
+	if period <= 0 {
+		return
+	}
+	mid = SMA(vals, period)
 	for i := period - 1; i < n; i++ {
 		if math.IsNaN(mid[i]) {
 			continue

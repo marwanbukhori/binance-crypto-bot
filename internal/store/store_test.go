@@ -41,4 +41,13 @@ func TestRecordSignalAndSnapshot(t *testing.T) {
 	defer s.Close()
 	if err := s.RecordSignal("BTCUSDT", "ema_cross_trend", "BUY", "cross", 1); err != nil { t.Fatal(err) }
 	if err := s.RecordPnLSnapshot(2, 1000, 5.5); err != nil { t.Fatal(err) }
+
+	n, err := s.CountSignals()
+	if err != nil || n != 1 {
+		t.Fatalf("CountSignals=%d err=%v, want 1", n, err)
+	}
+	m, err := s.CountPnLSnapshots()
+	if err != nil || m != 1 {
+		t.Fatalf("CountPnLSnapshots=%d err=%v, want 1", m, err)
+	}
 }
