@@ -200,7 +200,106 @@ foundation that can validate strategies before any real money is involved.
 
 ---
 
-## 10. Configuration & security
+## 10. Operating the bot — configuration, targets, projections, reporting
+
+### 10.1 Configuration
+
+All non-secret settings live in one `config.yaml`; secrets live in `.env` (gitignored). Example:
+
+```yaml
+mode: paper                 # backtest | paper | live
+exchange: { testnet: true }
+
+symbols: [BTCUSDT, ETHUSDT]
+
+strategies:
+  - name: ema_cross
+    enabled: true
+    timeframe: 1h
+    params: { fast: 9, slow: 21, rsi_period: 14, rsi_max: 70 }
+  - name: rsi_reversion
+    enabled: false
+    timeframe: 15m
+    params: { rsi_period: 14, oversold: 30, overbought: 70 }
+
+risk:
+  max_open_positions: 3
+  max_pct_per_trade: 5          # cap: % of balance in one position
+  risk_per_trade_pct: 1         # fixed-fractional risk (ATR-based stop)
+  daily_loss_limit_pct: 3       # breach -> kill-switch for the day
+  weekly_loss_limit_pct: 8
+  post_loss_cooldown_min: 60
+
+profit:
+  take_profit_pct: 2            # per-trade target (locks the win)
+  stop_loss_pct: 1              # per-trade stop (cuts the loss)
+  trailing_stop_pct: 0          # 0 = off (optional; ride winners when > 0)
+  # NOTE: no daily profit-lock by design (decision A). The bot keeps trading
+  # all day; only the daily/weekly LOSS limits above can halt it.
+  account_goal_pct: 50          # long-horizon goal -> reporting/projection ONLY
+
+control:
+  autonomous: false             # false = approve-first via Telegram
+
+notify:  { telegram: { enabled: true, daily_digest_at: "21:00" } }
+dashboard: { enabled: true, port: 8080 }
+```
+
+```env
+# .env  (gitignored)
+BINANCE_API_KEY=...      BINANCE_API_SECRET=...
+TELEGRAM_BOT_TOKEN=...   TELEGRAM_CHAT_ID=...
+DASHBOARD_TOKEN=...
+```
+
+### 10.2 Operating lifecycle (one binary, increasing trust)
+
+1. **Backtest** — `bot backtest --strategy ema_cross --from 2024-01-01 --to 2025-06-01` → performance
+   report. Tune until the numbers justify proceeding.
+2. **Paper** — `mode: paper` runs on **testnet** with live prices and fake money. Observe for weeks.
+3. **Live, approve-first** — real keys, `autonomous: false`. The bot sends *"BUY 0.01 BTC @ 64,300 —
+   TP 65,586 / SL 63,657 — Approve / Reject"* and trades only on approval.
+4. **Autonomous** — flip `autonomous: true` once recorded numbers earn trust. Guardrails stay on.
+
+### 10.3 Profit-target behavior (decision: per-trade only — option A)
+
+The "profit target" is a set of **exit/risk controls, never a prediction**:
+
+- **Per-trade take-profit / stop-loss** *(active)* — each position auto-exits at +`take_profit_pct`
+  or −`stop_loss_pct`.
+- **Trailing stop** *(optional, default off)* — when set, the exit trails price up to ride winners.
+- **Daily profit-lock** *(NOT used — decision A)* — the bot does **not** stop after a good day; it
+  keeps trading. Accepted trade-off: it may give back some unrealized gains chasing more.
+- **Account goal** *(reporting/projection only)* — never drives trades.
+
+**Intentional asymmetry:** there is no daily *profit* cap, but the daily/weekly *loss* limits +
+kill-switch (§5) remain fully active. Downside is bounded per day; upside is left open.
+
+### 10.4 Projections (the honest version)
+
+No tool can project future profit; the bot never shows a fabricated "you'll make $X" number. It
+shows only outputs grounded in recorded/backtested data, each labeled *"past performance, not a
+guarantee"*:
+
+- **Expectancy** — avg return per trade × trade frequency, from backtest/live history.
+- **Monte Carlo cone** — resample the actual trade-outcome distribution thousands of times to show a
+  5th / 50th / 95th-percentile equity fan and the worst drawdown observed across runs (shows the
+  *spread of luck*, not a point estimate).
+- **Risk-of-ruin & time-to-goal** — probability of an X% drawdown and median time to reach
+  `account_goal_pct`, *conditional on the historical edge holding*.
+
+### 10.5 Reporting
+
+| Surface | Contents |
+|---|---|
+| **Telegram digest** (daily/weekly) | Realized + unrealized P&L, win rate, best/worst trade, open positions, balance, fees, progress toward account goal. |
+| **Dashboard** | Live equity curve, drawdown chart, open positions, recent decisions *with reasons*, per-strategy scorecard, regime breakdown, Monte Carlo projection cone. |
+| **Per-strategy scorecard** | Win rate, expectancy, Sharpe-ish, max drawdown — split by market regime. Also feeds the learning layer. |
+| **Exports** | CSV trade log (tax-friendly) + monthly PDF statement. |
+
+---
+
+## 11. Configuration & security
 
 - Config via YAML for non-secrets (mode, symbols, strategies + params, risk limits) + **environment
   variables for all secrets** (Binance API key/secret, Telegram bot token, dashboard auth token).
@@ -212,7 +311,7 @@ foundation that can validate strategies before any real money is involved.
 
 ---
 
-## 11. Deployment (Oracle Cloud Always Free)
+## 12. Deployment (Oracle Cloud Always Free)
 
 - Cross-compile the single static Go binary for ARM64 (pure-Go SQLite driver keeps this trivial —
   no CGO).
@@ -223,7 +322,7 @@ foundation that can validate strategies before any real money is involved.
 
 ---
 
-## 12. Open items to verify at implementation time
+## 13. Open items to verify at implementation time
 
 These are deliberately deferred to the writing-plans / build phase (documentation discovery), not
 guessed at now:
@@ -238,7 +337,7 @@ guessed at now:
 
 ---
 
-## 13. Explicit non-goals (YAGNI)
+## 14. Explicit non-goals (YAGNI)
 
 - No futures, margin, or leverage (Spot only).
 - No black-box ML model with direct order control.
