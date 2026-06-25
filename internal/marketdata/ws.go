@@ -2,8 +2,13 @@ package marketdata
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
+	"strings"
+	"sync"
+	"time"
 
+	"github.com/gorilla/websocket"
 	"tradebot/internal/domain"
 )
 
@@ -41,4 +46,99 @@ func parseKlineEvent(raw []byte) (domain.Candle, bool, error) {
 		Closed: m.K.X,
 	}
 	return c, m.K.X, nil
+}
+
+type Stream interface {
+	Candles() <-chan domain.Candle
+	Close() error
+}
+
+// ChanStream adapts a plain channel to Stream (used for tests and the sim path).
+type ChanStream struct{ ch chan domain.Candle }
+
+func NewChanStream(ch chan domain.Candle) *ChanStream { return &ChanStream{ch: ch} }
+func (c *ChanStream) Candles() <-chan domain.Candle   { return c.ch }
+func (c *ChanStream) Close() error                    { return nil }
+
+func streamURL(testnet bool, symbols []string, interval string) string {
+	host := "wss://stream.binance.com:9443"
+	if testnet {
+		host = "wss://testnet.binance.vision"
+	}
+	parts := make([]string, len(symbols))
+	for i, s := range symbols {
+		parts[i] = strings.ToLower(s) + "@kline_" + interval
+	}
+	return fmt.Sprintf("%s/stream?streams=%s", host, strings.Join(parts, "/"))
+}
+
+type WSStream struct {
+	url  string
+	out  chan domain.Candle
+	done chan struct{}
+	once sync.Once
+}
+
+func NewWSStream(testnet bool, symbols []string, interval string) *WSStream {
+	w := &WSStream{url: streamURL(testnet, symbols, interval), out: make(chan domain.Candle, 64), done: make(chan struct{})}
+	go w.run()
+	return w
+}
+
+func (w *WSStream) Candles() <-chan domain.Candle { return w.out }
+
+func (w *WSStream) Close() error {
+	w.once.Do(func() { close(w.done) })
+	return nil
+}
+
+// combined-stream frames wrap the payload as {"stream":"...","data":{...}}.
+type combinedFrame struct {
+	Data json.RawMessage `json:"data"`
+}
+
+func (w *WSStream) run() {
+	backoff := time.Second
+	for {
+		select {
+		case <-w.done:
+			return
+		default:
+		}
+		conn, _, err := websocket.DefaultDialer.Dial(w.url, nil)
+		if err != nil {
+			time.Sleep(backoff)
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
+		}
+		backoff = time.Second
+		for {
+			select {
+			case <-w.done:
+				conn.Close()
+				return
+			default:
+			}
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				conn.Close()
+				break // reconnect
+			}
+			payload := msg
+			var cf combinedFrame
+			if json.Unmarshal(msg, &cf) == nil && len(cf.Data) > 0 {
+				payload = cf.Data
+			}
+			if c, closed, perr := parseKlineEvent(payload); perr == nil && closed {
+				select {
+				case w.out <- c:
+				case <-w.done:
+					conn.Close()
+					return
+				}
+			}
+		}
+	}
 }
