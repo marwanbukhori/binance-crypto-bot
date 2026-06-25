@@ -1885,13 +1885,8 @@ git commit -m "feat: add Binance REST kline client and wire main"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `internal/marketdata/rest_test.go`:
+Append to `internal/marketdata/rest_test.go` (add `"fmt"` to the existing import block):
 ```go
-import (
-	"fmt"      // add to import block
-	"strings"  // add to import block
-)
-
 func TestBackfillPaginates(t *testing.T) {
 	// Server returns 2 candles per page, advancing by startTime, then an empty page.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1917,7 +1912,6 @@ func TestBackfillPaginates(t *testing.T) {
 	if cs[0].OpenTime != 0 || cs[2].OpenTime != 120000 {
 		t.Fatalf("bad pagination order: %+v", cs)
 	}
-	_ = strings.TrimSpace // keep import used if needed
 }
 ```
 
