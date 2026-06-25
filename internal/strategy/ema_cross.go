@@ -33,6 +33,7 @@ func NewEMACross(symbol, timeframe string, p map[string]float64) *EMACross {
 }
 
 func (s *EMACross) Name() string      { return "ema_cross_trend" }
+func (s *EMACross) Kind() string      { return "trend" }
 func (s *EMACross) Symbol() string    { return s.symbol }
 func (s *EMACross) Timeframe() string { return s.timeframe }
 
