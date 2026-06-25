@@ -156,6 +156,31 @@ func MACD(vals []float64, fast, slow, signal int) (macd, sig, hist []float64) {
 	return
 }
 
+// Bollinger returns the middle (SMA), upper, and lower bands using population stddev.
+func Bollinger(vals []float64, period int, k float64) (mid, upper, lower []float64) {
+	n := len(vals)
+	mid = SMA(vals, period)
+	upper = make([]float64, n)
+	lower = make([]float64, n)
+	for i := range vals {
+		upper[i], lower[i] = math.NaN(), math.NaN()
+	}
+	for i := period - 1; i < n; i++ {
+		if math.IsNaN(mid[i]) {
+			continue
+		}
+		var sumsq float64
+		for j := i - period + 1; j <= i; j++ {
+			d := vals[j] - mid[i]
+			sumsq += d * d
+		}
+		sd := math.Sqrt(sumsq / float64(period))
+		upper[i] = mid[i] + k*sd
+		lower[i] = mid[i] - k*sd
+	}
+	return
+}
+
 // ADX is Wilder's Average Directional Index in [0,100]. Pre-warm-up positions are NaN.
 func ADX(cs []domain.Candle, period int) []float64 {
 	out := make([]float64, len(cs))

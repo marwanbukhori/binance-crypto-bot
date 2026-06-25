@@ -98,3 +98,19 @@ func TestMACDCrossSign(t *testing.T) {
 		t.Fatal("hist must equal macd - sig")
 	}
 }
+
+func TestBollingerBandsAroundMean(t *testing.T) {
+	vals := []float64{10, 12, 11, 13, 12, 14, 13, 15, 14, 16}
+	mid, up, lo := Bollinger(vals, 5, 2.0)
+	i := len(vals) - 1
+	if math.IsNaN(mid[i]) || math.IsNaN(up[i]) || math.IsNaN(lo[i]) {
+		t.Fatal("bands undefined at end")
+	}
+	if !(lo[i] < mid[i] && mid[i] < up[i]) {
+		t.Fatalf("expected lo<mid<up, got %v %v %v", lo[i], mid[i], up[i])
+	}
+	// symmetric around mid
+	if math.Abs((up[i]-mid[i])-(mid[i]-lo[i])) > 1e-9 {
+		t.Fatal("bands must be symmetric around mid")
+	}
+}
