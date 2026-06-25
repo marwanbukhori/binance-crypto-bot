@@ -22,6 +22,10 @@ type Gate struct {
 	rr  float64 // min post-fee reward:risk
 }
 
+// freeCashBuffer is the haircut applied to free USDT when computing max buy qty,
+// matching spec §6: free_usdt × 0.995 to leave a thin cash reserve.
+const freeCashBuffer = 0.995
+
 func NewGate(c config.RiskCfg, feeFraction float64) *Gate {
 	return &Gate{cfg: c, fee: feeFraction, rr: 1.3}
 }
@@ -52,7 +56,9 @@ func (g *Gate) Evaluate(in domain.Intent, a Account, f Filters) (domain.Order, e
 		return domain.Order{}, fmt.Errorf("buy needs positive price and stop distance")
 	}
 
-	// Post-fee net reward:risk gate.
+	// Post-fee net reward:risk gate (spec §6).
+	// M1: g.fee is the full round-trip fraction applied to each side intentionally
+	// per spec §6 formula — do NOT halve it to a per-side fee here.
 	feeAbs := g.fee * in.Price
 	netRR := (in.TPDist - feeAbs) / (in.StopDist + feeAbs)
 	if netRR < g.rr {
@@ -64,7 +70,7 @@ func (g *Gate) Evaluate(in domain.Intent, a Account, f Filters) (domain.Order, e
 	qtyCap := (a.Equity * g.cfg.MaxPctPerTrade / 100) / in.Price
 	roomPortfolio := a.Equity*g.cfg.PortfolioMaxDeployedPct/100 - a.DeployedNotional
 	qtyPortfolio := math.Max(0, roomPortfolio) / in.Price
-	qtyFree := (a.FreeUSDT * 0.995) / in.Price
+	qtyFree := (a.FreeUSDT * freeCashBuffer) / in.Price
 
 	qty := qtyRisk
 	binding := "risk"

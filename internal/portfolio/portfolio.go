@@ -26,12 +26,18 @@ func (p *Portfolio) Apply(f domain.Fill) {
 		p.cash -= f.Price*f.Qty + f.Fee
 		p.fees[f.Symbol] += f.Fee
 	case domain.Sell:
-		buyFee := p.fees[f.Symbol]
-		p.realized += (f.Price-pos.AvgEntry)*f.Qty - buyFee - f.Fee
-		p.fees[f.Symbol] = 0
+		// I2: expense buy fee proportionally to the fraction sold, so per-trade
+		// realized P&L is correct even for partial exits.
+		feeShare := p.fees[f.Symbol]
+		if pos.Qty > 0 {
+			feeShare = p.fees[f.Symbol] * f.Qty / pos.Qty
+		}
+		p.realized += (f.Price-pos.AvgEntry)*f.Qty - feeShare - f.Fee
+		p.fees[f.Symbol] -= feeShare
 		pos.Qty -= f.Qty
 		p.cash += f.Price*f.Qty - f.Fee
 		if pos.Qty <= 1e-12 {
+			p.fees[f.Symbol] = 0 // ensure no rounding dust on full exit
 			pos = domain.Position{Symbol: f.Symbol}
 		}
 	}

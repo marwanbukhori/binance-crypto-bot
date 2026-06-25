@@ -57,16 +57,22 @@ func (s *EMACross) Evaluate(h []domain.Candle, inPosition bool) *domain.Signal {
 	}
 	crossUp := emaF[i-1] <= emaS[i-1] && emaF[i] > emaS[i]
 	crossDown := emaF[i-1] >= emaS[i-1] && emaF[i] < emaS[i]
-	// Track pending upward crossover: set when cross fires, clear when price recrosses down.
+	// Track pending upward crossover: set when the cross fires.
+	// I1: clear ONLY when (a) we are already in a position (order was accepted) or
+	// (b) a recross down invalidates the setup — NOT when emitting the Buy signal.
+	// This ensures a gate-rejected buy is re-offered on subsequent candles.
 	if crossUp {
 		s.pendingCrossUp = true
 	}
-	if crossDown || emaF[i] <= emaS[i] {
+	if inPosition || crossDown || emaF[i] < emaS[i] {
+		// (a) entered: clear so we don't double-signal while in position.
+		// (b) recross down or EMA is now below: setup invalidated.
 		s.pendingCrossUp = false
 	}
 	now := h[i]
 	if !inPosition && s.pendingCrossUp && adx[i] >= s.adxMin {
-		s.pendingCrossUp = false
+		// Do NOT clear pendingCrossUp here: the caller (engine/backtest) may reject
+		// this order. The flag is cleared above once inPosition becomes true.
 		stop := s.slATRMult * atr[i]
 		return &domain.Signal{
 			Symbol: s.symbol, Action: domain.Buy, Time: now.CloseTime,

@@ -33,6 +33,21 @@ func TestKlinesParsesBinanceArray(t *testing.T) {
 	}
 }
 
+// TestBackfillNon200ReturnsError asserts that a non-200 HTTP response from the
+// klines endpoint causes Backfill to return an error (I4 fix).
+func TestBackfillNon200ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"code":-1003,"msg":"Too many requests"}`)
+	}))
+	defer srv.Close()
+	c := NewClient(false).WithHTTP(srv.Client(), srv.URL)
+	_, err := c.Backfill("BTCUSDT", "1m", 0, 200000)
+	if err == nil {
+		t.Fatal("expected error on non-200 response, got nil")
+	}
+}
+
 func TestBackfillPaginates(t *testing.T) {
 	// Server returns 2 candles per page, advancing by startTime, then an empty page.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

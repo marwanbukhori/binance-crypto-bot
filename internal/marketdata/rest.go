@@ -101,6 +101,11 @@ func (c *Client) Backfill(symbol, interval string, startMs, endMs int64) ([]doma
 		if err != nil {
 			return nil, fmt.Errorf("backfill GET: %w", err)
 		}
+		// I4: check HTTP status before decoding (mirrors Klines).
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			return nil, fmt.Errorf("backfill status %d", resp.StatusCode)
+		}
 		var rows [][]any
 		err = json.NewDecoder(resp.Body).Decode(&rows)
 		resp.Body.Close()
@@ -125,7 +130,12 @@ func (c *Client) Backfill(symbol, interval string, startMs, endMs int64) ([]doma
 		if len(rows) < 2 {
 			break
 		}
-		cur = lastClose + 1
+		next := lastClose + 1
+		// I4: guard against non-advancing pagination to prevent infinite loops.
+		if next <= cur {
+			return nil, fmt.Errorf("backfill pagination stalled: lastClose %d did not advance cur %d", lastClose, cur)
+		}
+		cur = next
 	}
 	return out, nil
 }

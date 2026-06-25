@@ -1,6 +1,7 @@
 package backtest
 
 import (
+	"tradebot/internal/config"
 	"tradebot/internal/domain"
 	"tradebot/internal/risk"
 	"tradebot/internal/strategy"
@@ -94,6 +95,16 @@ func Run(s strategy.Strategy, g *risk.Gate, f risk.Filters, candles []domain.Can
 	// Close any dangling position at the last close for reporting.
 	if open != nil {
 		closeTrade(candles[len(candles)-1].Close, candles[len(candles)-1].CloseTime, "eod")
+		// I3: include the final forced-close equity point in MaxDrawdownPct.
+		eq := cash
+		if eq > peak {
+			peak = eq
+		}
+		if peak > 0 {
+			if dd := (peak - eq) / peak * 100; dd > rep.MaxDrawdownPct {
+				rep.MaxDrawdownPct = dd
+			}
+		}
 	}
 	rep.FinalEquity = cash
 	if rep.NumTrades > 0 {
@@ -109,10 +120,13 @@ type SweepRow struct {
 }
 
 // Sweep runs the backtest at several round-trip fee levels (percent).
-func Sweep(s strategy.Strategy, g *risk.Gate, f risk.Filters, candles []domain.Candle, startCash float64, feesRoundTrip []float64) []SweepRow {
+// C1: a fresh Gate is built for each fee level so that the R:R gate uses the
+// same fee fraction as the fill simulation — sweeping both legs together.
+func Sweep(s strategy.Strategy, cfg config.RiskCfg, f risk.Filters, candles []domain.Candle, startCash float64, feesRoundTrip []float64) []SweepRow {
 	rows := make([]SweepRow, 0, len(feesRoundTrip))
 	for _, rt := range feesRoundTrip {
-		perSide := rt / 2 / 100
+		g := risk.NewGate(cfg, rt/100) // round-trip fraction for the gate
+		perSide := rt / 2 / 100        // per-side fraction for fills
 		rep := Run(s, g, f, candles, startCash, perSide)
 		rows = append(rows, SweepRow{
 			FeeRoundTripPct: rt, NetPnL: rep.NetPnL,

@@ -59,7 +59,7 @@ func runBacktest(args []string) {
 	fmt.Printf("trades=%d winRate=%.1f%% netPnL=%.2f expectancy=%.4f maxDD=%.2f%% finalEquity=%.2f\n",
 		rep.NumTrades, rep.WinRate*100, rep.NetPnL, rep.Expectancy, rep.MaxDrawdownPct, rep.FinalEquity)
 	fmt.Println("--- fee sensitivity (round-trip) ---")
-	for _, r := range backtest.Sweep(s, g, filt, candles, 10000, []float64{0.20, 0.30, 0.45}) {
+	for _, r := range backtest.Sweep(s, cfg.Risk, filt, candles, 10000, []float64{0.20, 0.30, 0.45}) {
 		mark := "OK"
 		if !r.Profitable {
 			mark = "UNPROFITABLE"
