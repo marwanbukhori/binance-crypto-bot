@@ -102,3 +102,23 @@ func Run(s strategy.Strategy, g *risk.Gate, f risk.Filters, candles []domain.Can
 	}
 	return rep
 }
+
+type SweepRow struct {
+	FeeRoundTripPct, NetPnL, Expectancy, WinRate float64
+	Profitable                                   bool
+}
+
+// Sweep runs the backtest at several round-trip fee levels (percent).
+func Sweep(s strategy.Strategy, g *risk.Gate, f risk.Filters, candles []domain.Candle, startCash float64, feesRoundTrip []float64) []SweepRow {
+	rows := make([]SweepRow, 0, len(feesRoundTrip))
+	for _, rt := range feesRoundTrip {
+		perSide := rt / 2 / 100
+		rep := Run(s, g, f, candles, startCash, perSide)
+		rows = append(rows, SweepRow{
+			FeeRoundTripPct: rt, NetPnL: rep.NetPnL,
+			Expectancy: rep.Expectancy, WinRate: rep.WinRate,
+			Profitable: rep.NetPnL > 0,
+		})
+	}
+	return rows
+}
