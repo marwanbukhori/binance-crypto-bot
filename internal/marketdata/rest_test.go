@@ -1,6 +1,7 @@
 package marketdata
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,5 +30,32 @@ func TestKlinesParsesBinanceArray(t *testing.T) {
 	}
 	if !cs[0].Closed || cs[0].Symbol != "BTCUSDT" {
 		t.Fatalf("expected closed candle for BTCUSDT: %+v", cs[0])
+	}
+}
+
+func TestBackfillPaginates(t *testing.T) {
+	// Server returns 2 candles per page, advancing by startTime, then an empty page.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := r.URL.Query().Get("startTime")
+		switch start {
+		case "0":
+			fmt.Fprint(w, `[[0,"1","2","0","1.5","1",59999,"x",1,"x","x","0"],[60000,"1.5","2.5","1","2","1",119999,"x",1,"x","x","0"]]`)
+		case "120000":
+			fmt.Fprint(w, `[[120000,"2","3","1.5","2.5","1",179999,"x",1,"x","x","0"]]`)
+		default:
+			fmt.Fprint(w, `[]`)
+		}
+	}))
+	defer srv.Close()
+	c := NewClient(false).WithHTTP(srv.Client(), srv.URL)
+	cs, err := c.Backfill("BTCUSDT", "1m", 0, 200000)
+	if err != nil {
+		t.Fatalf("Backfill: %v", err)
+	}
+	if len(cs) != 3 {
+		t.Fatalf("want 3 deduped candles, got %d", len(cs))
+	}
+	if cs[0].OpenTime != 0 || cs[2].OpenTime != 120000 {
+		t.Fatalf("bad pagination order: %+v", cs)
 	}
 }

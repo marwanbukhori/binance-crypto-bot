@@ -88,3 +88,44 @@ func (c *Client) Klines(symbol, interval string, limit int) ([]domain.Candle, er
 	}
 	return out, nil
 }
+
+// Backfill pages klines in [startMs, endMs] and returns them deduped and ordered.
+func (c *Client) Backfill(symbol, interval string, startMs, endMs int64) ([]domain.Candle, error) {
+	var out []domain.Candle
+	seen := map[int64]bool{}
+	cur := startMs
+	for cur <= endMs {
+		url := fmt.Sprintf("%s/api/v3/klines?symbol=%s&interval=%s&startTime=%d&endTime=%d&limit=1000",
+			c.base, symbol, interval, cur, endMs)
+		resp, err := c.http.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("backfill GET: %w", err)
+		}
+		var rows [][]any
+		err = json.NewDecoder(resp.Body).Decode(&rows)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("backfill decode: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+		var lastClose int64
+		for _, r := range rows {
+			cd, err := parseKline(symbol, interval, r)
+			if err != nil {
+				return nil, err
+			}
+			if !seen[cd.OpenTime] {
+				seen[cd.OpenTime] = true
+				out = append(out, cd)
+			}
+			lastClose = cd.CloseTime
+		}
+		if len(rows) < 2 {
+			break
+		}
+		cur = lastClose + 1
+	}
+	return out, nil
+}
