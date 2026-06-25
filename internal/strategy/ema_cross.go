@@ -10,9 +10,10 @@ import (
 
 // EMACross is the ema_cross_trend strategy: EMA9>EMA21 cross with ADX>=adxMin.
 type EMACross struct {
-	symbol, timeframe               string
+	symbol, timeframe                string
 	fast, slow, adxPeriod, atrPeriod int
 	adxMin, slATRMult, tpRewardMult  float64
+	pendingCrossUp                   bool // crossover fired but ADX not yet confirmed
 }
 
 func NewEMACross(symbol, timeframe string, p map[string]float64) *EMACross {
@@ -54,10 +55,18 @@ func (s *EMACross) Evaluate(h []domain.Candle, inPosition bool) *domain.Signal {
 	if math.IsNaN(emaF[i]) || math.IsNaN(emaF[i-1]) || math.IsNaN(emaS[i]) || math.IsNaN(emaS[i-1]) || math.IsNaN(adx[i]) || math.IsNaN(atr[i]) {
 		return nil
 	}
-	crossUp := emaF[i] > emaS[i]
-	crossDown := emaF[i] < emaS[i]
+	crossUp := emaF[i-1] <= emaS[i-1] && emaF[i] > emaS[i]
+	crossDown := emaF[i-1] >= emaS[i-1] && emaF[i] < emaS[i]
+	// Track pending upward crossover: set when cross fires, clear when price recrosses down.
+	if crossUp {
+		s.pendingCrossUp = true
+	}
+	if crossDown || emaF[i] <= emaS[i] {
+		s.pendingCrossUp = false
+	}
 	now := h[i]
-	if !inPosition && crossUp && adx[i] >= s.adxMin {
+	if !inPosition && s.pendingCrossUp && adx[i] >= s.adxMin {
+		s.pendingCrossUp = false
 		stop := s.slATRMult * atr[i]
 		return &domain.Signal{
 			Symbol: s.symbol, Action: domain.Buy, Time: now.CloseTime,
