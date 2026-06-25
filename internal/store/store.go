@@ -21,6 +21,15 @@ CREATE TABLE IF NOT EXISTS fills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER, symbol TEXT, side TEXT, qty REAL, price REAL, fee REAL
 );
+CREATE TABLE IF NOT EXISTS signals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, symbol TEXT, strategy TEXT, action TEXT, reason TEXT
+);
+CREATE TABLE IF NOT EXISTS pnl_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, equity REAL, realized REAL
+);
+CREATE TABLE IF NOT EXISTS kill_state (
+  id INTEGER PRIMARY KEY CHECK (id=1), killed INTEGER, reason TEXT, ts INTEGER
+);
 `
 
 func Open(path string) (*Store, error) {
@@ -59,4 +68,39 @@ func (s *Store) CountFills() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM fills`).Scan(&n)
 	return n, err
+}
+
+func (s *Store) RecordSignal(sym, strat, action, reason string, ts int64) error {
+	_, err := s.db.Exec(`INSERT INTO signals(ts,symbol,strategy,action,reason) VALUES(?,?,?,?,?)`,
+		ts, sym, strat, action, reason)
+	return err
+}
+
+func (s *Store) RecordPnLSnapshot(ts int64, equity, realized float64) error {
+	_, err := s.db.Exec(`INSERT INTO pnl_snapshots(ts,equity,realized) VALUES(?,?,?)`, ts, equity, realized)
+	return err
+}
+
+func (s *Store) SaveKillState(killed bool, reason string, ts int64) error {
+	k := 0
+	if killed {
+		k = 1
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO kill_state(id,killed,reason,ts) VALUES(1,?,?,?)
+		 ON CONFLICT(id) DO UPDATE SET killed=excluded.killed, reason=excluded.reason, ts=excluded.ts`,
+		k, reason, ts)
+	return err
+}
+
+func (s *Store) LoadKillState() (bool, error) {
+	var k int
+	err := s.db.QueryRow(`SELECT killed FROM kill_state WHERE id=1`).Scan(&k)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return k == 1, nil
 }

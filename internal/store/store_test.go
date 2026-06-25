@@ -24,3 +24,21 @@ func TestRecordAndCount(t *testing.T) {
 		t.Fatalf("CountFills=%d err=%v want 1", n, err)
 	}
 }
+
+func TestKillStatePersists(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil { t.Fatalf("open: %v", err) }
+	defer s.Close()
+	killed, err := s.LoadKillState()
+	if err != nil || killed { t.Fatalf("fresh state must be not-killed, got %v err=%v", killed, err) }
+	if err := s.SaveKillState(true, "daily loss", 123); err != nil { t.Fatalf("save: %v", err) }
+	killed, err = s.LoadKillState()
+	if err != nil || !killed { t.Fatalf("expected killed after save, got %v err=%v", killed, err) }
+}
+
+func TestRecordSignalAndSnapshot(t *testing.T) {
+	s, _ := Open(":memory:")
+	defer s.Close()
+	if err := s.RecordSignal("BTCUSDT", "ema_cross_trend", "BUY", "cross", 1); err != nil { t.Fatal(err) }
+	if err := s.RecordPnLSnapshot(2, 1000, 5.5); err != nil { t.Fatal(err) }
+}
