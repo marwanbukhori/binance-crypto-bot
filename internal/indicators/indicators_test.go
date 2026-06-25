@@ -82,3 +82,19 @@ func TestRSIMidRange(t *testing.T) {
 		t.Fatalf("RSI out of range: %v", r[15])
 	}
 }
+
+func TestMACDCrossSign(t *testing.T) {
+	vals := make([]float64, 60)
+	for i := range vals { vals[i] = 100 + float64(i) } // steady uptrend
+	macd, sig, hist := MACD(vals, 12, 26, 9)
+	last := len(vals) - 1
+	if math.IsNaN(macd[last]) || math.IsNaN(sig[last]) || math.IsNaN(hist[last]) {
+		t.Fatal("MACD should be defined at the end of a long series")
+	}
+	if macd[last] <= 0 {
+		t.Fatalf("uptrend MACD line should be positive, got %v", macd[last])
+	}
+	if math.Abs((macd[last]-sig[last])-hist[last]) > 1e-9 {
+		t.Fatal("hist must equal macd - sig")
+	}
+}

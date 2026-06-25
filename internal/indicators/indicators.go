@@ -124,6 +124,38 @@ func RSI(vals []float64, period int) []float64 {
 	return out
 }
 
+// MACD returns the MACD line, signal line, and histogram. NaN before warm-up.
+func MACD(vals []float64, fast, slow, signal int) (macd, sig, hist []float64) {
+	n := len(vals)
+	macd = make([]float64, n)
+	sig = make([]float64, n)
+	hist = make([]float64, n)
+	for i := range vals {
+		macd[i], sig[i], hist[i] = math.NaN(), math.NaN(), math.NaN()
+	}
+	if n <= slow {
+		return
+	}
+	emaF := EMA(vals, fast)
+	emaS := EMA(vals, slow)
+	for i := slow - 1; i < n; i++ {
+		if !math.IsNaN(emaF[i]) && !math.IsNaN(emaS[i]) {
+			macd[i] = emaF[i] - emaS[i]
+		}
+	}
+	// Signal EMA over the valid macd tail (from index slow-1).
+	start := slow - 1
+	tail := macd[start:]
+	sigTail := EMA(tail, signal)
+	for i := range sigTail {
+		if !math.IsNaN(sigTail[i]) {
+			sig[start+i] = sigTail[i]
+			hist[start+i] = macd[start+i] - sig[start+i]
+		}
+	}
+	return
+}
+
 // ADX is Wilder's Average Directional Index in [0,100]. Pre-warm-up positions are NaN.
 func ADX(cs []domain.Candle, period int) []float64 {
 	out := make([]float64, len(cs))
