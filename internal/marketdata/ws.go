@@ -73,10 +73,12 @@ func streamURL(testnet bool, symbols []string, interval string) string {
 }
 
 type WSStream struct {
-	url  string
-	out  chan domain.Candle
-	done chan struct{}
-	once sync.Once
+	url     string
+	out     chan domain.Candle
+	done    chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	conn    *websocket.Conn
 }
 
 func NewWSStream(testnet bool, symbols []string, interval string) *WSStream {
@@ -87,8 +89,21 @@ func NewWSStream(testnet bool, symbols []string, interval string) *WSStream {
 
 func (w *WSStream) Candles() <-chan domain.Candle { return w.out }
 
+func (w *WSStream) setConn(c *websocket.Conn) {
+	w.mu.Lock()
+	w.conn = c
+	w.mu.Unlock()
+}
+
 func (w *WSStream) Close() error {
-	w.once.Do(func() { close(w.done) })
+	w.once.Do(func() {
+		close(w.done)
+		w.mu.Lock()
+		if w.conn != nil {
+			w.conn.Close()
+		}
+		w.mu.Unlock()
+	})
 	return nil
 }
 
@@ -113,16 +128,19 @@ func (w *WSStream) run() {
 			}
 			continue
 		}
+		w.setConn(conn)
 		backoff = time.Second
 		for {
 			select {
 			case <-w.done:
+				w.setConn(nil)
 				conn.Close()
 				return
 			default:
 			}
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
+				w.setConn(nil)
 				conn.Close()
 				break // reconnect
 			}
@@ -135,6 +153,7 @@ func (w *WSStream) run() {
 				select {
 				case w.out <- c:
 				case <-w.done:
+					w.setConn(nil)
 					conn.Close()
 					return
 				}
