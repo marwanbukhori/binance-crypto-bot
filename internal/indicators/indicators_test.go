@@ -67,3 +67,18 @@ func TestADXRangeAndTrendDetection(t *testing.T) {
 		t.Fatalf("strong uptrend should give ADX>=20, got %v", last)
 	}
 }
+
+func TestRSIAllGainsIs100(t *testing.T) {
+	vals := []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	r := RSI(vals, 14)
+	if !math.IsNaN(r[13]) { t.Fatal("RSI before period must be NaN at index 13") }
+	if r[15] < 99.9 { t.Fatalf("all-gains RSI must be ~100, got %v", r[15]) }
+}
+
+func TestRSIMidRange(t *testing.T) {
+	vals := []float64{44, 44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28}
+	r := RSI(vals, 14)
+	if math.IsNaN(r[15]) || r[15] <= 0 || r[15] >= 100 {
+		t.Fatalf("RSI out of range: %v", r[15])
+	}
+}

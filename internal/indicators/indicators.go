@@ -81,6 +81,49 @@ func ATR(cs []domain.Candle, period int) []float64 {
 	return out
 }
 
+// RSI is Wilder's Relative Strength Index in [0,100]; indices < period are NaN.
+func RSI(vals []float64, period int) []float64 {
+	out := make([]float64, len(vals))
+	for i := range out {
+		out[i] = math.NaN()
+	}
+	if period <= 0 || len(vals) <= period {
+		return out
+	}
+	var gain, loss float64
+	for i := 1; i <= period; i++ {
+		ch := vals[i] - vals[i-1]
+		if ch >= 0 {
+			gain += ch
+		} else {
+			loss -= ch
+		}
+	}
+	avgGain := gain / float64(period)
+	avgLoss := loss / float64(period)
+	rsi := func(g, l float64) float64 {
+		if l == 0 {
+			return 100
+		}
+		rs := g / l
+		return 100 - 100/(1+rs)
+	}
+	out[period] = rsi(avgGain, avgLoss)
+	for i := period + 1; i < len(vals); i++ {
+		ch := vals[i] - vals[i-1]
+		g, l := 0.0, 0.0
+		if ch >= 0 {
+			g = ch
+		} else {
+			l = -ch
+		}
+		avgGain = (avgGain*float64(period-1) + g) / float64(period)
+		avgLoss = (avgLoss*float64(period-1) + l) / float64(period)
+		out[i] = rsi(avgGain, avgLoss)
+	}
+	return out
+}
+
 // ADX is Wilder's Average Directional Index in [0,100]. Pre-warm-up positions are NaN.
 func ADX(cs []domain.Candle, period int) []float64 {
 	out := make([]float64, len(cs))
