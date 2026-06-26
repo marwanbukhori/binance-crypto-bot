@@ -65,8 +65,9 @@ async function refresh(){
   document.getElementById('equity').textContent = pts.length?Number(pts[pts.length-1].Equity).toFixed(2):'—';
   if(pts.length>1){const xs=pts.map((_,i)=>i*1000/(pts.length-1));const ys=pts.map(p=>p.Equity);const lo=Math.min(...ys),hi=Math.max(...ys),rng=(hi-lo)||1;
     document.getElementById('curve').setAttribute('points', pts.map((p,i)=>xs[i]+','+(115-110*(p.Equity-lo)/rng)).join(' '));}
-  document.getElementById('tradeRows').innerHTML = (tr||[]).map(x=>'<tr><td>'+t(x.TS)+'</td><td>'+x.Symbol+'</td><td>'+x.Strategy+'</td><td>'+x.Reason+'</td><td class="'+(x.NetPnL>=0?'pos':'neg')+'">'+fmt(x.NetPnL)+'</td></tr>').join('');
-  document.getElementById('sigRows').innerHTML = (sg||[]).map(x=>'<tr><td>'+t(x.TS)+'</td><td>'+x.Symbol+'</td><td>'+x.Strategy+'</td><td>'+x.Action+'</td><td>'+x.Reason+'</td></tr>').join('');
+  const mkRow = cells => { const tr2=document.createElement('tr'); cells.forEach(([txt,cls])=>{ const td=document.createElement('td'); td.textContent=txt; if(cls)td.className=cls; tr2.appendChild(td); }); return tr2; };
+  const tb1=document.getElementById('tradeRows'); tb1.textContent=''; (tr||[]).forEach(x=>tb1.appendChild(mkRow([[t(x.TS)],[x.Symbol],[x.Strategy],[x.Reason],[fmt(x.NetPnL),x.NetPnL>=0?'pos':'neg']])));
+  const tb2=document.getElementById('sigRows');  tb2.textContent=''; (sg||[]).forEach(x=>tb2.appendChild(mkRow([[t(x.TS)],[x.Symbol],[x.Strategy],[x.Action],[x.Reason]])));
 }
 refresh(); setInterval(refresh, 5000);
 </script>
