@@ -76,3 +76,13 @@ func TestEquitySeriesAscending(t *testing.T) {
 	if err != nil || len(eq) != 2 { t.Fatalf("equity=%d err=%v", len(eq), err) }
 	if eq[0].TS != 1 || eq[1].TS != 2 { t.Fatalf("must be ascending: %+v", eq) }
 }
+
+func TestTradeRegimeRoundTrips(t *testing.T) {
+	s, _ := Open(":memory:")
+	defer s.Close()
+	s.RecordTrade(Trade{TS: 1, Symbol: "BTCUSDT", Strategy: "ema_cross_trend", Regime: "TrendingUp", Reason: "TP", NetPnL: 4})
+	ts, _ := s.ListTrades(5)
+	if len(ts) != 1 || ts[0].Regime != "TrendingUp" {
+		t.Fatalf("regime not persisted: %+v", ts)
+	}
+}

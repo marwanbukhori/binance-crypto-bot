@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS kill_state (
   id INTEGER PRIMARY KEY CHECK (id=1), killed INTEGER, reason TEXT, ts INTEGER
 );
 CREATE TABLE IF NOT EXISTS trades (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, symbol TEXT, strategy TEXT, reason TEXT,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, symbol TEXT, strategy TEXT, regime TEXT, reason TEXT,
   entry_px REAL, exit_px REAL, qty REAL, net_pnl REAL
 );
 `
@@ -122,19 +122,19 @@ func (s *Store) LoadKillState() (bool, error) {
 }
 
 type Trade struct {
-	TS                       int64
-	Symbol, Strategy, Reason string
-	EntryPx, ExitPx, Qty, NetPnL float64
+	TS                               int64
+	Symbol, Strategy, Regime, Reason string
+	EntryPx, ExitPx, Qty, NetPnL    float64
 }
 
 func (s *Store) RecordTrade(t Trade) error {
-	_, err := s.db.Exec(`INSERT INTO trades(ts,symbol,strategy,reason,entry_px,exit_px,qty,net_pnl)
-		VALUES(?,?,?,?,?,?,?,?)`, t.TS, t.Symbol, t.Strategy, t.Reason, t.EntryPx, t.ExitPx, t.Qty, t.NetPnL)
+	_, err := s.db.Exec(`INSERT INTO trades(ts,symbol,strategy,regime,reason,entry_px,exit_px,qty,net_pnl)
+		VALUES(?,?,?,?,?,?,?,?,?)`, t.TS, t.Symbol, t.Strategy, t.Regime, t.Reason, t.EntryPx, t.ExitPx, t.Qty, t.NetPnL)
 	return err
 }
 
 func (s *Store) ListTrades(limit int) ([]Trade, error) {
-	rows, err := s.db.Query(`SELECT ts,symbol,strategy,reason,entry_px,exit_px,qty,net_pnl FROM trades ORDER BY id DESC LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT ts,symbol,strategy,regime,reason,entry_px,exit_px,qty,net_pnl FROM trades ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (s *Store) ListTrades(limit int) ([]Trade, error) {
 	var out []Trade
 	for rows.Next() {
 		var t Trade
-		if err := rows.Scan(&t.TS, &t.Symbol, &t.Strategy, &t.Reason, &t.EntryPx, &t.ExitPx, &t.Qty, &t.NetPnL); err != nil {
+		if err := rows.Scan(&t.TS, &t.Symbol, &t.Strategy, &t.Regime, &t.Reason, &t.EntryPx, &t.ExitPx, &t.Qty, &t.NetPnL); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

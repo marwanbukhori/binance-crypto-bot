@@ -28,11 +28,12 @@ type Live struct {
 	store  *store.Store
 	filt   risk.Filters
 	buf    *marketdata.Buffer
-	open      map[string]*domain.Order
-	idx       map[string]int // per-symbol candle counter for cooldown
-	entryIdx  map[string]int // per-symbol candle index at which the position was opened
-	openStrat map[string]string // strategy name that opened the current position
-	ctrl      *control.Controller
+	open       map[string]*domain.Order
+	idx        map[string]int    // per-symbol candle counter for cooldown
+	entryIdx   map[string]int    // per-symbol candle index at which the position was opened
+	openStrat  map[string]string // strategy name that opened the current position
+	openRegime map[string]string // market regime at entry
+	ctrl       *control.Controller
 	notify    telegram.Notifier
 	autonomous bool
 }
@@ -42,7 +43,7 @@ func NewLive(syms []string, mkStrats func(string) []strategy.Strategy, gate *ris
 	for _, s := range syms {
 		strats[s] = mkStrats(s)
 	}
-	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}, openStrat: map[string]string{}, notify: telegram.NoopNotifier{}}
+	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}, openStrat: map[string]string{}, openRegime: map[string]string{}, notify: telegram.NoopNotifier{}}
 }
 
 func (l *Live) SetControl(ctrl *control.Controller, n telegram.Notifier, autonomous bool) {
@@ -67,7 +68,7 @@ func (l *Live) Run(ctx context.Context, s marketdata.Stream) error {
 	}
 }
 
-func (l *Live) execBuy(o domain.Order, c domain.Candle, stratName string) error {
+func (l *Live) execBuy(o domain.Order, c domain.Candle, stratName, regimeName string) error {
 	fill, err := l.exec.Execute(o, c)
 	if err != nil {
 		return err
@@ -78,6 +79,7 @@ func (l *Live) execBuy(o domain.Order, c domain.Candle, stratName string) error 
 	l.open[sym] = &oo
 	l.entryIdx[sym] = l.idx[sym]
 	l.openStrat[sym] = stratName
+	l.openRegime[sym] = regimeName
 	_ = l.store.RecordOrder(o)
 	return l.store.RecordFill(fill)
 }
@@ -88,6 +90,7 @@ func (l *Live) recordClose(sym string, entry domain.Order, exitPx float64, ts in
 		TS:       ts,
 		Symbol:   sym,
 		Strategy: l.openStrat[sym],
+		Regime:   l.openRegime[sym],
 		Reason:   reason,
 		EntryPx:  entry.Price,
 		ExitPx:   exitPx,
@@ -137,7 +140,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	// execute any user-approved orders (approve-first) in THIS (engine) goroutine:
 	if l.ctrl != nil {
 		for _, ao := range l.ctrl.DrainApproved() {
-			_ = l.execBuy(ao, c, "")
+			_ = l.execBuy(ao, c, "", "")
 		}
 	}
 
@@ -175,6 +178,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 			_ = l.store.RecordFill(fill)
 			delete(l.open, sym)
 			delete(l.openStrat, sym)
+			delete(l.openRegime, sym)
 			inPos = false
 		}
 	}
@@ -225,6 +229,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 			_ = l.store.RecordFill(fill)
 			delete(l.open, sym)
 			delete(l.openStrat, sym)
+			delete(l.openRegime, sym)
 		}
 		return nil
 	}
@@ -257,7 +262,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 		_ = l.notify.AskApproval(tok, alert)
 		return nil
 	}
-	if err := l.execBuy(o, c, chosen.Name); err != nil {
+	if err := l.execBuy(o, c, chosen.Name, reg.String()); err != nil {
 		return err
 	}
 	_ = l.notify.Info(alert)
