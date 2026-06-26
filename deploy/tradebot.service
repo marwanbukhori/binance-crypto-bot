@@ -1,0 +1,21 @@
+[Unit]
+Description=tradebot (Binance Spot bot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tradebot
+WorkingDirectory=/opt/tradebot
+EnvironmentFile=/opt/tradebot/.env
+ExecStart=/opt/tradebot/bot --config /opt/tradebot/config.yaml
+Restart=always
+RestartSec=5
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tradebot
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

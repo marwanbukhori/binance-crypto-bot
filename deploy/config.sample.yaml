@@ -1,0 +1,21 @@
+# deploy/config.sample.yaml
+mode: paper            # paper -> live only after testnet validation
+exchange: { testnet: true }
+symbols: [BTCUSDT]
+strategies:
+  - { name: ema_cross_trend, enabled: true, timeframe: 1h, params: { adx_min: 25, sl_atr_mult: 2.0, tp_reward_mult: 1.6 } }
+risk:
+  max_pct_per_trade: 5
+  risk_per_trade_pct: 1
+  max_open_positions: 2
+  portfolio_max_deployed_pct: 10
+  daily_loss_limit_pct: 3
+  hard_flatten_drawdown_pct: 6
+  weekly_loss_limit_pct: 8
+  post_loss_cooldown_candles: 2
+  tp_reward_mult: 1.6
+  trailing_stop_pct: 0
+  fee_model: { majors: 0.30, alts: 0.45, bnb_discount: true }
+control: { autonomous: false }   # approve-first; flip to true only once trusted
+notify: { telegram: { enabled: true } }
+dashboard: { enabled: true, port: 8080 }
