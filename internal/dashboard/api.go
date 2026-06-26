@@ -81,4 +81,3 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) }
