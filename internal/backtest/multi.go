@@ -58,6 +58,14 @@ func RunMulti(symbols []string, candles map[string][]domain.Candle, mkStrats Str
 	}
 
 	for i := 1; i <= maxLen; i++ {
+		// Roll time boundary before marking equity so that daily/weekly baselines
+		// and the kill-switch re-arming take effect at the start of each new day.
+		for _, sym := range symbols {
+			if i-1 < len(candles[sym]) {
+				guard.RollTime(candles[sym][i-1].CloseTime, markEquity(i))
+				break
+			}
+		}
 		guard.Mark(markEquity(i))
 		for _, sym := range symbols {
 			cs := candles[sym]
