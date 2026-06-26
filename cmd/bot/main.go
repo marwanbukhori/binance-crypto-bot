@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"tradebot/internal/backtest"
+	"tradebot/internal/binance"
 	"tradebot/internal/config"
 	"tradebot/internal/control"
 	"tradebot/internal/dashboard"
@@ -48,6 +49,10 @@ func main() {
 	}
 	if cfg.Mode == "paper" {
 		runPaper(cfg)
+		return
+	}
+	if cfg.Mode == "live" {
+		runLive(cfg)
 		return
 	}
 	fmt.Printf("tradebot %s — mode=%s symbols=%v (run `bot backtest` to validate a strategy)\n",
@@ -126,6 +131,89 @@ func runPaper(cfg config.Config) {
 	stream := marketdata.NewWSStream(cfg.Exchange.Testnet, cfg.Symbols, interval)
 	defer stream.Close()
 	log.Printf("paper trading live on %v (%s) — Ctrl-C to stop", cfg.Symbols, interval)
+	if err := l.Run(ctx, stream); err != nil && err != context.Canceled {
+		log.Printf("live run ended: %v", err)
+	}
+}
+
+func runLive(cfg config.Config) {
+	if cfg.Secrets.BinanceAPIKey == "" || cfg.Secrets.BinanceAPISecret == "" {
+		log.Fatal("live mode requires BINANCE_API_KEY and BINANCE_API_SECRET (trade+read, NO withdrawal)")
+	}
+	interval := "1h"
+	if len(cfg.Strategies) > 0 && cfg.Strategies[0].Timeframe != "" {
+		interval = cfg.Strategies[0].Timeframe
+	}
+	bc := binance.NewClient(cfg.Secrets.BinanceAPIKey, cfg.Secrets.BinanceAPISecret, cfg.Exchange.Testnet)
+	// real starting USDT balance
+	var startUSDT float64
+	bals, err := bc.GetAccount()
+	if err != nil {
+		log.Fatalf("account: %v", err)
+	}
+	for _, b := range bals {
+		if b.Asset == "USDT" {
+			startUSDT = b.Free
+		}
+	}
+	st, err := store.Open("tradebot.db")
+	if err != nil {
+		log.Fatalf("store: %v", err)
+	}
+	defer st.Close()
+	buf := marketdata.NewBuffer(500)
+	rest := marketdata.NewClient(cfg.Exchange.Testnet)
+	for _, sym := range cfg.Symbols {
+		cs, err := rest.Klines(sym, interval, 500)
+		if err != nil {
+			log.Printf("warmup %s failed: %v", sym, err)
+			continue
+		}
+		buf.Seed(sym, cs)
+	}
+	// real exchange filters per symbol (fatal if missing — never guess live)
+	filt := risk.Filters{}
+	if len(cfg.Symbols) > 0 {
+		filt, err = bc.SymbolFilters(cfg.Symbols[0])
+		if err != nil {
+			log.Fatalf("exchange filters for %s: %v", cfg.Symbols[0], err)
+		}
+	}
+	gate := risk.NewGate(cfg.Risk, cfg.Risk.FeeModel.Majors/100)
+	guard := risk.NewGuard(cfg.Risk, startUSDT)
+	if killed, _ := st.LoadKillState(); killed {
+		guard.Kill()
+		log.Print("kill-switch ACTIVE from a prior session — entries blocked until reset")
+	}
+	cool := risk.NewCooldown(cfg.Risk.PostLossCooldownCandles)
+	pf := portfolio.New(startUSDT)
+	mk := func(sym string) []strategy.Strategy { return []strategy.Strategy{strategy.NewEMACross(sym, interval, nil)} }
+	l := engine.NewLive(cfg.Symbols, mk, gate, guard, cool, execution.NewLive(bc), pf, st, filt, buf)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	var notifier telegram.Notifier = telegram.NoopNotifier{}
+	ctrl := control.New()
+	if cfg.Secrets.TelegramBotToken != "" {
+		chatID, _ := strconv.ParseInt(cfg.Secrets.TelegramChatID, 10, 64)
+		tg := telegram.NewClient(cfg.Secrets.TelegramBotToken)
+		notifier = telegram.NewTelegramNotifier(tg, chatID)
+		go telegram.Poll(ctx, tg, ctrl, chatID, func() string { return ctrl.Status() }, func() string { return ctrl.Status() })
+	}
+	l.SetControl(ctrl, notifier, cfg.Control.Autonomous)
+	if cfg.Dashboard.Enabled && cfg.Secrets.DashboardToken != "" {
+		port := cfg.Dashboard.Port
+		if port == 0 {
+			port = 8080
+		}
+		srv := dashboard.New(st, ctrl, cfg.Secrets.DashboardToken)
+		go func() { _ = http.ListenAndServe(fmt.Sprintf(":%d", port), srv.Handler()) }()
+	}
+	stream := marketdata.NewWSStream(cfg.Exchange.Testnet, cfg.Symbols, interval)
+	defer stream.Close()
+	log.Printf("*** LIVE TRADING *** symbols=%v interval=%s startUSDT=%.2f autonomous=%v testnet=%v",
+		cfg.Symbols, interval, startUSDT, cfg.Control.Autonomous, cfg.Exchange.Testnet)
 	if err := l.Run(ctx, stream); err != nil && err != context.Canceled {
 		log.Printf("live run ended: %v", err)
 	}
