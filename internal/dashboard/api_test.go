@@ -9,6 +9,17 @@ import (
 	"tradebot/internal/store"
 )
 
+func TestScorecardAndProjection(t *testing.T) {
+	s, st, _ := newServer(t)
+	st.RecordTrade(store.Trade{TS: 3, Symbol: "BTCUSDT", Strategy: "ema_cross_trend", Regime: "TrendingUp", EntryPx: 100, Qty: 1, NetPnL: 4})
+	st.RecordTrade(store.Trade{TS: 4, Symbol: "BTCUSDT", Strategy: "ema_cross_trend", Regime: "TrendingUp", EntryPx: 100, Qty: 1, NetPnL: -2})
+	for _, path := range []string{"/api/scorecard?token=secret", "/api/projection?token=secret"} {
+		rr := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
+		if rr.Code != 200 { t.Fatalf("%s status %d", path, rr.Code) }
+	}
+}
+
 func newServer(t *testing.T) (*Server, *store.Store, *control.Controller) {
 	st, _ := store.Open(":memory:")
 	st.RecordTrade(store.Trade{TS: 1, Symbol: "BTCUSDT", Strategy: "ema_cross_trend", Reason: "TP", NetPnL: 5})

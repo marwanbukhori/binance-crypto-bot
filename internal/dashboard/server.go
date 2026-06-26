@@ -46,6 +46,11 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   <table><thead><tr><th>time</th><th>symbol</th><th>strategy</th><th>reason</th><th>net</th></tr></thead><tbody id="tradeRows"></tbody></table>
   <h3>Recent decisions</h3>
   <table><thead><tr><th>time</th><th>symbol</th><th>strategy</th><th>action</th><th>reason</th></tr></thead><tbody id="sigRows"></tbody></table>
+  <h3>Strategy scorecards (net, by regime)</h3>
+  <table><thead><tr><th>strategy</th><th>regime</th><th>trades</th><th>win%</th><th>net P&amp;L</th><th>expectancy</th><th>max DD</th></tr></thead><tbody id="scoreRows"></tbody></table>
+  <h3>Projection (Monte-Carlo — past performance, not a guarantee)</h3>
+  <div id="proj" style="padding:10px;background:#11151f;border:1px solid #1f2733;border-radius:10px;margin-bottom:8px">—</div>
+  <svg id="coneSvg" viewBox="0 0 1000 120" preserveAspectRatio="none"><polyline id="coneP5" fill="none" stroke="#e0556b" stroke-width="1.5"/><polyline id="coneP50" fill="none" stroke="#3ad17a" stroke-width="2"/><polyline id="coneP95" fill="none" stroke="#5bc0eb" stroke-width="1.5"/></svg>
 </main>
 <script>
 // API calls rely on the dash_token cookie being sent automatically with same-origin requests.
@@ -55,7 +60,7 @@ const ctl = a => fetch('/api/'+a,{method:'POST'}).then(()=>refresh());
 const fmt = n => (n>=0?'+':'') + Number(n).toFixed(2);
 const t = ms => new Date(ms).toLocaleString();
 async function refresh(){
-  const [s,stat,eq,tr,sg] = await Promise.all([q('/api/status'),q('/api/stats'),q('/api/equity'),q('/api/trades'),q('/api/signals')]);
+  const [s,stat,eq,tr,sg,sc,pj] = await Promise.all([q('/api/status'),q('/api/stats'),q('/api/equity'),q('/api/trades'),q('/api/signals'),q('/api/scorecard'),q('/api/projection')]);
   document.getElementById('state').textContent = s.paused?'PAUSED':'RUNNING';
   document.getElementById('state').style.background = s.paused?'#7a5a1f':'#1b6e3a';
   document.getElementById('statusline').textContent = s.status||'';
@@ -69,6 +74,18 @@ async function refresh(){
   const mkRow = cells => { const tr2=document.createElement('tr'); cells.forEach(([txt,cls])=>{ const td=document.createElement('td'); td.textContent=txt; if(cls)td.className=cls; tr2.appendChild(td); }); return tr2; };
   const tb1=document.getElementById('tradeRows'); tb1.textContent=''; (tr||[]).forEach(x=>tb1.appendChild(mkRow([[t(x.TS)],[x.Symbol],[x.Strategy],[x.Reason],[fmt(x.NetPnL),x.NetPnL>=0?'pos':'neg']])));
   const tb2=document.getElementById('sigRows');  tb2.textContent=''; (sg||[]).forEach(x=>tb2.appendChild(mkRow([[t(x.TS)],[x.Symbol],[x.Strategy],[x.Action],[x.Reason]])));
+  const tb3=document.getElementById('scoreRows'); tb3.textContent=''; (sc||[]).forEach(x=>tb3.appendChild(mkRow([[x.Strategy],[x.Regime],[String(x.Trades)],[(x.Trades?(100*x.WinRate).toFixed(1):'0')+'%'],[fmt(x.NetPnL),x.NetPnL>=0?'pos':'neg'],[fmt(x.Expectancy),x.Expectancy>=0?'pos':'neg'],[Number(x.MaxDrawdown).toFixed(2)]])));
+  if(pj&&pj.Steps>0){
+    const projEl=document.getElementById('proj');
+    const fmtX = v => Number(v).toFixed(2)+'x';
+    const txt = 'median '+fmtX(pj.TermP50/10000)+', 5th '+fmtX(pj.TermP5/10000)+', 95th '+fmtX(pj.TermP95/10000)+', risk-of-ruin '+Number(pj.RiskOfRuinPct).toFixed(1)+'%';
+    projEl.textContent = txt;
+    const allVals=[...pj.P5,...pj.P50,...pj.P95];const lo=Math.min(...allVals),hi=Math.max(...allVals),rng=(hi-lo)||1;
+    const toPts = arr => arr.map((v,i)=>(i*1000/(arr.length-1))+','+(115-110*(v-lo)/rng)).join(' ');
+    document.getElementById('coneP5').setAttribute('points', toPts(pj.P5));
+    document.getElementById('coneP50').setAttribute('points', toPts(pj.P50));
+    document.getElementById('coneP95').setAttribute('points', toPts(pj.P95));
+  }
 }
 refresh(); setInterval(refresh, 5000);
 </script>

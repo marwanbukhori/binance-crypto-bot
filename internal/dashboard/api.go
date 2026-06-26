@@ -3,10 +3,12 @@ package dashboard
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"math/rand"
 	"net/http"
 	"strings"
 
 	"tradebot/internal/control"
+	"tradebot/internal/learning"
 	"tradebot/internal/store"
 )
 
@@ -105,6 +107,15 @@ func (s *Server) Handler() http.Handler {
 		s.ctrl.Resume()
 		writeJSON(w, map[string]string{"ok": "resumed"})
 	})))
+	mux.HandleFunc("/api/scorecard", s.authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		ts, _ := s.store.ListTrades(1000)
+		writeJSON(w, learning.ScoreByRegime(ts))
+	}))
+	mux.HandleFunc("/api/projection", s.authMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		ts, _ := s.store.ListTrades(1000)
+		proj := learning.MonteCarlo(learning.TradeReturns(ts), 10000, 30, 1000, 20, rand.New(rand.NewSource(1)))
+		writeJSON(w, proj)
+	}))
 	mux.HandleFunc("/", s.authMiddleware(s.handleIndex))
 	return mux
 }
