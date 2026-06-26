@@ -28,9 +28,10 @@ type Live struct {
 	store  *store.Store
 	filt   risk.Filters
 	buf    *marketdata.Buffer
-	open     map[string]*domain.Order
-	idx      map[string]int // per-symbol candle counter for cooldown
-	entryIdx map[string]int // per-symbol candle index at which the position was opened
+	open      map[string]*domain.Order
+	idx       map[string]int // per-symbol candle counter for cooldown
+	entryIdx  map[string]int // per-symbol candle index at which the position was opened
+	openStrat map[string]string // strategy name that opened the current position
 	ctrl      *control.Controller
 	notify    telegram.Notifier
 	autonomous bool
@@ -41,7 +42,7 @@ func NewLive(syms []string, mkStrats func(string) []strategy.Strategy, gate *ris
 	for _, s := range syms {
 		strats[s] = mkStrats(s)
 	}
-	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}, notify: telegram.NoopNotifier{}}
+	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}, openStrat: map[string]string{}, notify: telegram.NoopNotifier{}}
 }
 
 func (l *Live) SetControl(ctrl *control.Controller, n telegram.Notifier, autonomous bool) {
@@ -66,7 +67,7 @@ func (l *Live) Run(ctx context.Context, s marketdata.Stream) error {
 	}
 }
 
-func (l *Live) execBuy(o domain.Order, c domain.Candle) error {
+func (l *Live) execBuy(o domain.Order, c domain.Candle, stratName string) error {
 	fill, err := l.exec.Execute(o, c)
 	if err != nil {
 		return err
@@ -76,8 +77,23 @@ func (l *Live) execBuy(o domain.Order, c domain.Candle) error {
 	sym := o.Symbol
 	l.open[sym] = &oo
 	l.entryIdx[sym] = l.idx[sym]
+	l.openStrat[sym] = stratName
 	_ = l.store.RecordOrder(o)
 	return l.store.RecordFill(fill)
+}
+
+func (l *Live) recordClose(sym string, entry domain.Order, exitPx float64, ts int64, reason string, netBefore float64) {
+	net := l.pf.Realized() - netBefore
+	_ = l.store.RecordTrade(store.Trade{
+		TS:       ts,
+		Symbol:   sym,
+		Strategy: l.openStrat[sym],
+		Reason:   reason,
+		EntryPx:  entry.Price,
+		ExitPx:   exitPx,
+		Qty:      entry.Qty,
+		NetPnL:   net,
+	})
 }
 
 func (l *Live) OnCandle(c domain.Candle) error {
@@ -121,7 +137,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	// execute any user-approved orders (approve-first) in THIS (engine) goroutine:
 	if l.ctrl != nil {
 		for _, ao := range l.ctrl.DrainApproved() {
-			_ = l.execBuy(ao, c)
+			_ = l.execBuy(ao, c, "")
 		}
 	}
 
@@ -151,6 +167,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 			}
 			before := l.pf.Realized()
 			l.pf.Apply(fill)
+			l.recordClose(sym, *o, px, c.CloseTime, reason, before)
 			if l.pf.Realized() < before {
 				l.cool.NoteLoss(sym, i)
 			}
@@ -166,11 +183,11 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	for _, stg := range l.strats[sym] {
 		if sig := stg.Evaluate(hist, inPos); sig != nil {
 			_ = l.store.RecordSignal(sym, stg.Name(), sig.Action.String(), sig.Reason, c.CloseTime)
-			cands = append(cands, decision.Candidate{Kind: stg.Kind(), Signal: *sig})
+			cands = append(cands, decision.Candidate{Kind: stg.Kind(), Name: stg.Name(), Signal: *sig})
 		}
 	}
 	reg := regime.Classify(hist)
-	sig := decision.Choose(reg, inPos, cands)
+	chosen := decision.Pick(reg, inPos, cands)
 	_ = l.store.RecordPnLSnapshot(c.CloseTime, eq, l.pf.Realized())
 
 	// Publish a status snapshot via the controller so the poller goroutine can
@@ -186,11 +203,12 @@ func (l *Live) OnCandle(c domain.Candle) error {
 		l.ctrl.SetStatus(fmt.Sprintf("equity %.2f | realized %.2f |%s", eq, l.pf.Realized(), posSummary))
 	}
 
-	if sig == nil {
+	if chosen == nil {
 		return nil
 	}
+	sig := &chosen.Signal
 	if sig.Action == domain.Sell {
-		if _, ok := l.open[sym]; ok {
+		if entryOrder, ok := l.open[sym]; ok {
 			exit := domain.Order{Symbol: sym, Side: domain.Sell, Qty: pos.Qty, Price: c.Close, Type: "MARKET", Reason: sig.Reason, Time: c.CloseTime}
 			fill, err := l.exec.Execute(exit, c)
 			if err != nil {
@@ -198,6 +216,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 			}
 			before := l.pf.Realized()
 			l.pf.Apply(fill)
+			l.recordClose(sym, *entryOrder, c.Close, c.CloseTime, sig.Reason, before)
 			if l.pf.Realized() < before {
 				l.cool.NoteLoss(sym, i)
 			}
@@ -236,7 +255,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 		_ = l.notify.AskApproval(tok, alert)
 		return nil
 	}
-	if err := l.execBuy(o, c); err != nil {
+	if err := l.execBuy(o, c, chosen.Name); err != nil {
 		return err
 	}
 	_ = l.notify.Info(alert)

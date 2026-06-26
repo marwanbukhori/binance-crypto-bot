@@ -41,3 +41,14 @@ func TestChooseNoStackWhenInPosition(t *testing.T) {
 		t.Fatalf("must not open a second position while in one, got %+v", got)
 	}
 }
+
+func TestPickReturnsChosenCandidate(t *testing.T) {
+	cands := []Candidate{
+		{Kind: "trend", Name: "ema_cross_trend", Signal: domain.Signal{Action: domain.Buy, Reason: "t"}},
+		{Kind: "reversion", Name: "rsi_bb_reversion", Signal: domain.Signal{Action: domain.Buy, Reason: "r"}},
+	}
+	got := Pick(regime.LowVolChop, false, cands)
+	if got == nil || got.Name != "rsi_bb_reversion" {
+		t.Fatalf("LowVolChop must pick reversion, got %+v", got)
+	}
+}

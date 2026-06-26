@@ -16,7 +16,26 @@ func KindEnabled(r regime.Regime, kind string) bool {
 
 type Candidate struct {
 	Kind   string
+	Name   string
 	Signal domain.Signal
+}
+
+// Pick is Choose but returns the chosen candidate (for strategy attribution).
+func Pick(r regime.Regime, inPosition bool, cands []Candidate) *Candidate {
+	if inPosition {
+		for i := range cands {
+			if cands[i].Signal.Action == domain.Sell {
+				return &cands[i]
+			}
+		}
+		return nil
+	}
+	for i := range cands {
+		if cands[i].Signal.Action == domain.Buy && KindEnabled(r, cands[i].Kind) {
+			return &cands[i]
+		}
+	}
+	return nil
 }
 
 // Choose selects one action for a symbol. Exits are always allowed (any regime).

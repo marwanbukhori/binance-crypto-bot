@@ -42,3 +42,18 @@ func TestLiveRunsPipelineAndRecords(t *testing.T) {
 	n, _ := st.CountFills()
 	if n < 1 { t.Fatalf("expected the live engine to record at least one fill, got %d", n) }
 }
+
+func TestLiveRecordsTradeOnClose(t *testing.T) {
+	l, _, st := newLive(t, true) // autonomous (helper from Phase 4 test)
+	defer st.Close()
+	feedUptrendThenFlat(l) // enters on the uptrend
+	// drive a downtrend to force a rule/SL exit
+	for i := 0; i < 60; i++ {
+		p := 300 - float64(i)*5
+		_ = l.OnCandle(domain.Candle{Symbol: "BTCUSDT", Close: p, High: p + 3, Low: p - 3, Closed: true, CloseTime: int64(1000+i) * 3600_000})
+	}
+	tr, err := st.ListTrades(10)
+	if err != nil { t.Fatal(err) }
+	if len(tr) < 1 { t.Fatalf("expected at least one recorded round-trip trade, got %d", len(tr)) }
+	if tr[0].Strategy == "" { t.Fatal("trade must carry the opening strategy name") }
+}
