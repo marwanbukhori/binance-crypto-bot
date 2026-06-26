@@ -79,6 +79,9 @@ func runPaper(cfg config.Config) {
 	feeSide := cfg.Risk.FeeModel.Majors / 2 / 100
 	l := engine.NewLive(cfg.Symbols, mk, gate, guard, cool, execution.NewSimulated(feeSide), pf, st, risk.Filters{StepSize: 0.00001, MinQty: 0.00001, MinNotional: 5}, buf)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	// Build Telegram notifier + controller, start poller goroutine.
 	var notifier telegram.Notifier = telegram.NoopNotifier{}
 	ctrl := control.New()
@@ -93,14 +96,9 @@ func runPaper(cfg config.Config) {
 		positionsFn := func() string {
 			return fmt.Sprintf("open symbols: %v", cfg.Symbols)
 		}
-		ctx2, cancel2 := context.WithCancel(context.Background())
-		_ = cancel2
-		go telegram.Poll(ctx2, tgClient, ctrl, statusFn, positionsFn)
+		go telegram.Poll(ctx, tgClient, ctrl, statusFn, positionsFn)
 	}
 	l.SetControl(ctrl, notifier, cfg.Control.Autonomous)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 	stream := marketdata.NewWSStream(cfg.Exchange.Testnet, cfg.Symbols, interval)
 	defer stream.Close()
 	log.Printf("paper trading live on %v (%s) — Ctrl-C to stop", cfg.Symbols, interval)
