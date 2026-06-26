@@ -17,7 +17,7 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
  .tile b{display:block;font-size:22px;margin-top:4px}
  table{width:100%;border-collapse:collapse;margin-top:8px;background:#11151f;border-radius:10px;overflow:hidden}
  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #1f2733;font-variant-numeric:tabular-nums}
- .pos{color:#3ad17a}.neg{color:# e0556b}
+ .pos{color:#3ad17a}.neg{color:#e0556b}
  button{background:#243044;color:#d7dce5;border:1px solid #33425c;border-radius:8px;padding:8px 14px;cursor:pointer}
  button.kill{background:#7a1f2b;border-color:#a3303f}
  svg{width:100%;height:120px;background:#11151f;border:1px solid #1f2733;border-radius:10px}
@@ -48,9 +48,10 @@ var indexTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
   <table><thead><tr><th>time</th><th>symbol</th><th>strategy</th><th>action</th><th>reason</th></tr></thead><tbody id="sigRows"></tbody></table>
 </main>
 <script>
-const TOK = new URLSearchParams(location.search).get('token') || '';
-const q = p => fetch(p + (p.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOK)).then(r=>r.json());
-const ctl = a => fetch('/api/'+a+'?token='+encodeURIComponent(TOK),{method:'POST'}).then(()=>refresh());
+// API calls rely on the dash_token cookie being sent automatically with same-origin requests.
+// No token is appended to URLs.
+const q = p => fetch(p).then(r=>r.json());
+const ctl = a => fetch('/api/'+a,{method:'POST'}).then(()=>refresh());
 const fmt = n => (n>=0?'+':'') + Number(n).toFixed(2);
 const t = ms => new Date(ms).toLocaleString();
 async function refresh(){
@@ -74,6 +75,21 @@ refresh(); setInterval(refresh, 5000);
 </body></html>`))
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	// If a valid ?token= param is present, set a HttpOnly cookie and redirect to /
+	// to strip the token from the URL (browser history, Referer, proxy logs).
+	// NOTE: Secure flag is omitted so this works over localhost http;
+	// enable Secure when serving behind HTTPS/TLS termination.
+	if tok := r.URL.Query().Get("token"); tok != "" && tokenEqual(tok, s.token) {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "dash_token",
+			Value:    tok,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteStrictMode, // CSRF defense — required
+		})
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = indexTmpl.Execute(w, nil)
 }

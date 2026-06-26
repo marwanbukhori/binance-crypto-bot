@@ -111,7 +111,7 @@ func runPaper(cfg config.Config) {
 		srv := dashboard.New(st, ctrl, cfg.Secrets.DashboardToken)
 		go func() {
 			addr := fmt.Sprintf(":%d", port)
-			log.Printf("dashboard at http://localhost:%d/?token=%s", port, cfg.Secrets.DashboardToken)
+			log.Printf("dashboard at http://localhost:%d/ (open with ?token=<your DASHBOARD_TOKEN> once)", port)
 			if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
 				log.Printf("dashboard server stopped: %v", err)
 			}

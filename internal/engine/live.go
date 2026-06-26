@@ -174,6 +174,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 			_ = l.store.RecordOrder(exit)
 			_ = l.store.RecordFill(fill)
 			delete(l.open, sym)
+			delete(l.openStrat, sym)
 			inPos = false
 		}
 	}
@@ -223,6 +224,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 			_ = l.store.RecordOrder(exit)
 			_ = l.store.RecordFill(fill)
 			delete(l.open, sym)
+			delete(l.openStrat, sym)
 		}
 		return nil
 	}

@@ -210,6 +210,8 @@ func (s *Store) PerfStats() (Stats, error) {
 		st.WinRate = float64(st.Wins) / float64(st.Trades)
 		st.Expectancy = st.NetPnL / float64(st.Trades)
 	}
-	_ = s.db.QueryRow(`SELECT COALESCE(SUM(fee),0) FROM fills`).Scan(&st.Fees)
+	if err := s.db.QueryRow(`SELECT COALESCE(SUM(fee),0) FROM fills`).Scan(&st.Fees); err != nil {
+		return st, err
+	}
 	return st, nil
 }
