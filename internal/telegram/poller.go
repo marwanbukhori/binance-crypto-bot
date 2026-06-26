@@ -9,7 +9,10 @@ import (
 type StatusFunc func() string
 
 // Poll long-polls Telegram and applies commands/approvals to the controller.
-func Poll(ctx context.Context, c *Client, ctrl *control.Controller, status, positions StatusFunc) {
+// Only updates originating from authorizedChatID are honored; every other chat
+// is ignored (fail-closed — an unset/zero authorizedChatID authorizes nobody),
+// so a stranger who finds the bot cannot pause, kill, or approve trades.
+func Poll(ctx context.Context, c *Client, ctrl *control.Controller, authorizedChatID int64, status, positions StatusFunc) {
 	var offset int64
 	for {
 		select {
@@ -29,6 +32,13 @@ func Poll(ctx context.Context, c *Client, ctrl *control.Controller, status, posi
 		for _, u := range updates {
 			offset = u.UpdateID + 1
 			cmd, dec := Classify(u)
+			// Authorize the sender before acting on anything.
+			if cmd != nil && cmd.ChatID != authorizedChatID {
+				continue
+			}
+			if dec != nil && dec.ChatID != authorizedChatID {
+				continue
+			}
 			switch {
 			case dec != nil:
 				if dec.Approve {

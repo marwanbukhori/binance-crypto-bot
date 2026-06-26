@@ -95,7 +95,10 @@ func runPaper(cfg config.Config) {
 		positionsFn := func() string {
 			return ctrl.Status()
 		}
-		go telegram.Poll(ctx, tgClient, ctrl, statusFn, positionsFn)
+		if chatID == 0 {
+			log.Print("warning: TELEGRAM_CHAT_ID unset — Telegram commands will be ignored (fail-closed)")
+		}
+		go telegram.Poll(ctx, tgClient, ctrl, chatID, statusFn, positionsFn)
 	}
 	l.SetControl(ctrl, notifier, cfg.Control.Autonomous)
 	stream := marketdata.NewWSStream(cfg.Exchange.Testnet, cfg.Symbols, interval)

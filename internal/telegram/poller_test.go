@@ -33,7 +33,7 @@ func TestPollAppliesPauseAndApproval(t *testing.T) {
 	_ = tok
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	go Poll(ctx, c, ctrl, func() string { return "ok" }, func() string { return "none" })
+	go Poll(ctx, c, ctrl, 7, func() string { return "ok" }, func() string { return "none" })
 	deadline := time.After(800 * time.Millisecond)
 	for {
 		select {
@@ -47,5 +47,28 @@ func TestPollAppliesPauseAndApproval(t *testing.T) {
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
+	}
+}
+
+func TestPollIgnoresUnauthorizedChat(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"ok":true,"result":[
+		  {"update_id":1,"message":{"text":"/kill","chat":{"id":999}}},
+		  {"update_id":2,"callback_query":{"id":"cb","data":"approve:1","message":{"chat":{"id":999}}}}
+		]}`))
+	}))
+	defer srv.Close()
+	c := NewClient("tok").WithHTTP(srv.Client(), srv.URL)
+	ctrl := control.New()
+	ctrl.RequestApproval(orderStub()) // token "1"
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	go Poll(ctx, c, ctrl, 7, func() string { return "" }, func() string { return "" }) // authorized = 7, sender = 999
+	time.Sleep(250 * time.Millisecond)
+	if ctrl.KillRequested() {
+		t.Fatal("kill from an unauthorized chat (999) must be ignored")
+	}
+	if len(ctrl.DrainApproved()) != 0 {
+		t.Fatal("approval from an unauthorized chat must be ignored")
 	}
 }
