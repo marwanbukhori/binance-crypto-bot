@@ -99,3 +99,11 @@ These are the rules the whole design rests on. A change that violates one is a b
   roadmap item.
 - **Before autonomous live**, three robustness gaps must land (see ROADMAP / DEPLOY): order
   reconciliation, 429/418 backoff, clientOrderId-based retry. Run approve-first until then.
+- **Binance kline WS JSON is case-collision-prone.** A real kline `k` object carries `"L"` (last
+  trade id, a number) alongside `"l"` (low, a string); Go's `encoding/json` matches keys
+  case-insensitively, so without explicit exact-case fields (`LastID json:"L"`, `TakerV json:"V"`,
+  …) the number lands in the low/string field and `Unmarshal` errors on **every** live message —
+  the bot then silently emits zero candles. The `klineMsg.K` struct in `internal/marketdata/ws.go`
+  declares those absorber fields; `TestParseKlineEventRealMessage` guards it. Any new WS struct that
+  mirrors a Binance payload must include the colliding uppercase keys, and tests must use a *full*
+  real message, not a trimmed fixture.

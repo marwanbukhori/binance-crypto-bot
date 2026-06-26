@@ -17,15 +17,24 @@ type klineMsg struct {
 	EventTime int64  `json:"E"`
 	Sym      string `json:"s"`
 	K        struct {
-		T  int64  `json:"t"`
-		TT int64  `json:"T"`
+		T  int64  `json:"t"` // open time
+		TT int64  `json:"T"` // close time
 		I  string `json:"i"`
 		O  string `json:"o"`
 		C  string `json:"c"`
 		H  string `json:"h"`
-		L  string `json:"l"`
-		V  string `json:"v"`
+		L  string `json:"l"` // low price
+		V  string `json:"v"` // base volume
 		X  bool   `json:"x"`
+		// Binance kline objects also carry case-colliding keys. Go's JSON matching is
+		// case-insensitive, so without these exact-case fields the numeric "L"
+		// (last trade id) hijacks "l" (low) and errors, and "V" overwrites "v".
+		// Declaring them makes the exact-case match win and keeps price fields intact.
+		FirstID int64  `json:"f"` // first trade id
+		LastID  int64  `json:"L"` // last trade id (number — must not land in L/low)
+		NumTr   int64  `json:"n"` // number of trades
+		TakerV  string `json:"V"` // taker buy base volume (must not overwrite v)
+		TakerQ  string `json:"Q"` // taker buy quote volume
 	} `json:"k"`
 }
 
