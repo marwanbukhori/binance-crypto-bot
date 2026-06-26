@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"tradebot/internal/backtest"
 	"tradebot/internal/config"
 	"tradebot/internal/control"
+	"tradebot/internal/dashboard"
 	"tradebot/internal/engine"
 	"tradebot/internal/execution"
 	"tradebot/internal/marketdata"
@@ -101,6 +103,20 @@ func runPaper(cfg config.Config) {
 		go telegram.Poll(ctx, tgClient, ctrl, chatID, statusFn, positionsFn)
 	}
 	l.SetControl(ctrl, notifier, cfg.Control.Autonomous)
+	if cfg.Dashboard.Enabled && cfg.Secrets.DashboardToken != "" {
+		port := cfg.Dashboard.Port
+		if port == 0 {
+			port = 8080
+		}
+		srv := dashboard.New(st, ctrl, cfg.Secrets.DashboardToken)
+		go func() {
+			addr := fmt.Sprintf(":%d", port)
+			log.Printf("dashboard at http://localhost:%d/?token=%s", port, cfg.Secrets.DashboardToken)
+			if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
+				log.Printf("dashboard server stopped: %v", err)
+			}
+		}()
+	}
 	stream := marketdata.NewWSStream(cfg.Exchange.Testnet, cfg.Symbols, interval)
 	defer stream.Close()
 	log.Printf("paper trading live on %v (%s) — Ctrl-C to stop", cfg.Symbols, interval)

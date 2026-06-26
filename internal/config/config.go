@@ -55,6 +55,10 @@ type Config struct {
 			Enabled bool `yaml:"enabled"`
 		} `yaml:"telegram"`
 	} `yaml:"notify"`
+	Dashboard struct {
+		Enabled bool `yaml:"enabled"`
+		Port    int  `yaml:"port"`
+	} `yaml:"dashboard"`
 }
 
 // Load reads YAML config and overlays secrets from environment variables.
