@@ -36,7 +36,9 @@ func Poll(ctx context.Context, c *Client, ctrl *control.Controller, status, posi
 				} else {
 					ctrl.Reject(dec.Token)
 				}
-				_ = c.AnswerCallback(dec.CallbackID)
+				if dec.CallbackID != "" {
+					_ = c.AnswerCallback(dec.CallbackID)
+				}
 			case cmd != nil:
 				switch cmd.Name {
 				case "pause":

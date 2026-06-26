@@ -172,6 +172,20 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	reg := regime.Classify(hist)
 	sig := decision.Choose(reg, inPos, cands)
 	_ = l.store.RecordPnLSnapshot(c.CloseTime, eq, l.pf.Realized())
+
+	// Publish a status snapshot via the controller so the poller goroutine can
+	// read portfolio state without touching engine-owned data (race fix).
+	if l.ctrl != nil {
+		var posSummary string
+		for s, o := range l.open {
+			posSummary += fmt.Sprintf(" %s:%.6f", s, o.Qty)
+		}
+		if posSummary == "" {
+			posSummary = " none"
+		}
+		l.ctrl.SetStatus(fmt.Sprintf("equity %.2f | realized %.2f |%s", eq, l.pf.Realized(), posSummary))
+	}
+
 	if sig == nil {
 		return nil
 	}

@@ -90,11 +90,10 @@ func runPaper(cfg config.Config) {
 		tgClient := telegram.NewClient(cfg.Secrets.TelegramBotToken)
 		notifier = telegram.NewTelegramNotifier(tgClient, chatID)
 		statusFn := func() string {
-			return fmt.Sprintf("equity=%.2f realized=%.2f positions=%d",
-				pf.Equity(nil), pf.Realized(), len(cfg.Symbols))
+			return ctrl.Status()
 		}
 		positionsFn := func() string {
-			return fmt.Sprintf("open symbols: %v", cfg.Symbols)
+			return ctrl.Status()
 		}
 		go telegram.Poll(ctx, tgClient, ctrl, statusFn, positionsFn)
 	}

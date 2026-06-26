@@ -8,12 +8,13 @@ import (
 )
 
 type Controller struct {
-	mu       sync.Mutex
-	paused   bool
-	killReq  bool
-	seq      int64
-	pending  map[string]domain.Order
-	approved []domain.Order
+	mu         sync.Mutex
+	paused     bool
+	killReq    bool
+	seq        int64
+	pending    map[string]domain.Order
+	approved   []domain.Order
+	statusSnap string
 }
 
 func New() *Controller {
@@ -63,4 +64,20 @@ func (c *Controller) DrainApproved() []domain.Order {
 	out := c.approved
 	c.approved = nil
 	return out
+}
+
+// SetStatus stores a snapshot string produced by the engine goroutine so the
+// poller goroutine can read portfolio state without touching engine-owned data.
+func (c *Controller) SetStatus(s string) {
+	c.mu.Lock(); c.statusSnap = s; c.mu.Unlock()
+}
+
+// Status returns the last snapshot set by the engine goroutine.
+// Returns "no status yet" when no snapshot has been published.
+func (c *Controller) Status() string {
+	c.mu.Lock(); defer c.mu.Unlock()
+	if c.statusSnap == "" {
+		return "no status yet"
+	}
+	return c.statusSnap
 }

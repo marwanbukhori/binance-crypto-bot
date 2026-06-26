@@ -1,6 +1,7 @@
 package control
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 
@@ -50,4 +51,26 @@ func TestConcurrentSafe(t *testing.T) {
 	}
 	wg.Wait()
 	if len(c.DrainApproved()) != 50 { t.Fatalf("want 50 approved, got %d", len(c.DrainApproved())) }
+}
+
+func TestStatusRoundTrip(t *testing.T) {
+	c := New()
+	if got := c.Status(); got != "no status yet" {
+		t.Fatalf("default status: want %q, got %q", "no status yet", got)
+	}
+	c.SetStatus("equity 1000.00 | realized 50.00 | BTC:0.01")
+	if got := c.Status(); got != "equity 1000.00 | realized 50.00 | BTC:0.01" {
+		t.Fatalf("unexpected status: %q", got)
+	}
+}
+
+func TestStatusConcurrentSafe(t *testing.T) {
+	c := New()
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		go func(n int) { defer wg.Done(); c.SetStatus(fmt.Sprintf("snap %d", n)) }(i)
+		go func() { defer wg.Done(); _ = c.Status() }()
+	}
+	wg.Wait()
 }

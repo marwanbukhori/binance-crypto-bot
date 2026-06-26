@@ -3,6 +3,7 @@ package telegram
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -52,11 +53,11 @@ func (c *Client) post(method string, form url.Values) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil, fmt.Errorf("%s: status %d", method, resp.StatusCode)
 	}
-	var buf [1 << 16]byte
-	n, _ := resp.Body.Read(buf[:])
-	return buf[:n], nil
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil, nil
 }
 
 func (c *Client) SendMessage(chatID int64, text string) error {
