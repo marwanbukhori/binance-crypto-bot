@@ -25,8 +25,9 @@ type Live struct {
 	store  *store.Store
 	filt   risk.Filters
 	buf    *marketdata.Buffer
-	open   map[string]*domain.Order
-	idx    map[string]int // per-symbol candle counter for cooldown
+	open     map[string]*domain.Order
+	idx      map[string]int // per-symbol candle counter for cooldown
+	entryIdx map[string]int // per-symbol candle index at which the position was opened
 }
 
 func NewLive(syms []string, mkStrats func(string) []strategy.Strategy, gate *risk.Gate, guard *risk.Guard, cool *risk.Cooldown, ex execution.Executor, pf *portfolio.Portfolio, st *store.Store, f risk.Filters, buf *marketdata.Buffer) *Live {
@@ -34,7 +35,7 @@ func NewLive(syms []string, mkStrats func(string) []strategy.Strategy, gate *ris
 	for _, s := range syms {
 		strats[s] = mkStrats(s)
 	}
-	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}}
+	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}}
 }
 
 func (l *Live) Run(ctx context.Context, s marketdata.Stream) error {
@@ -62,6 +63,9 @@ func (l *Live) equity() float64 {
 }
 
 func (l *Live) OnCandle(c domain.Candle) error {
+	if !c.Closed {
+		return nil
+	}
 	sym := c.Symbol
 	hist := l.buf.Add(c)
 	i := l.idx[sym]
@@ -86,8 +90,11 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	// 1) manage open position: hard-flatten or TP/SL on this candle.
 	if o, ok := l.open[sym]; ok {
 		flatten := l.guard.ShouldFlatten()
-		hitStop := o.StopPrice > 0 && c.Low <= o.StopPrice
-		hitTP := o.TPPrice > 0 && c.High >= o.TPPrice
+		// Guard: TP/SL may only trigger on a candle *after* the entry candle, matching
+		// RunMulti's `i-1 > ps.entryIdx` guard to prevent look-ahead same-bar exits.
+		pastEntry := i > l.entryIdx[sym]
+		hitStop := pastEntry && o.StopPrice > 0 && c.Low <= o.StopPrice
+		hitTP := pastEntry && o.TPPrice > 0 && c.High >= o.TPPrice
 		if flatten || hitStop || hitTP {
 			px := c.Close
 			reason := "flatten"
@@ -170,6 +177,7 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	l.pf.Apply(fill)
 	oo := o
 	l.open[sym] = &oo
+	l.entryIdx[sym] = i
 	_ = l.store.RecordOrder(o)
 	return l.store.RecordFill(fill)
 }
