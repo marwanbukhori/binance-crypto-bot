@@ -122,7 +122,11 @@ func (w *WSStream) run() {
 		}
 		conn, _, err := websocket.DefaultDialer.Dial(w.url, nil)
 		if err != nil {
-			time.Sleep(backoff)
+			select {
+			case <-time.After(backoff):
+			case <-w.done:
+				return
+			}
 			if backoff < 30*time.Second {
 				backoff *= 2
 			}

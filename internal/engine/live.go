@@ -54,14 +54,6 @@ func (l *Live) Run(ctx context.Context, s marketdata.Stream) error {
 	}
 }
 
-func (l *Live) equity() float64 {
-	mark := map[string]float64{}
-	for sym, o := range l.open {
-		mark[sym] = o.Price // last entry as a fallback mark
-	}
-	return l.pf.Equity(mark)
-}
-
 func (l *Live) OnCandle(c domain.Candle) error {
 	if !c.Closed {
 		return nil
@@ -71,10 +63,21 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	i := l.idx[sym]
 	l.idx[sym] = i + 1
 
-	// mark equity using this candle's close for the active symbol
+	// mark equity: current symbol at its candle close; other open symbols at their
+	// latest known close (from the buffer), falling back to entry price if no history.
+	latestClose := func(s string, fallback float64) float64 {
+		if h := l.buf.History(s); len(h) > 0 {
+			return h[len(h)-1].Close
+		}
+		return fallback
+	}
 	mark := map[string]float64{}
 	for s, o := range l.open {
-		mark[s] = o.Price
+		if s == sym {
+			mark[s] = c.Close
+		} else {
+			mark[s] = latestClose(s, o.Price)
+		}
 	}
 	mark[sym] = c.Close
 	eq := l.pf.Equity(mark)
@@ -158,9 +161,11 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	}
 	var deployed float64
 	for s, o := range l.open {
-		m := o.Price
+		var m float64
 		if s == sym {
 			m = c.Close
+		} else {
+			m = latestClose(s, o.Price)
 		}
 		deployed += o.Qty * m
 	}
