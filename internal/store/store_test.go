@@ -51,3 +51,28 @@ func TestRecordSignalAndSnapshot(t *testing.T) {
 		t.Fatalf("CountPnLSnapshots=%d err=%v, want 1", m, err)
 	}
 }
+
+func TestTradesAndStats(t *testing.T) {
+	s, _ := Open(":memory:")
+	defer s.Close()
+	s.RecordTrade(Trade{TS: 1, Symbol: "BTCUSDT", Strategy: "ema_cross_trend", Reason: "TP", EntryPx: 100, ExitPx: 104, Qty: 1, NetPnL: 3.5})
+	s.RecordTrade(Trade{TS: 2, Symbol: "BTCUSDT", Strategy: "ema_cross_trend", Reason: "SL", EntryPx: 104, ExitPx: 102, Qty: 1, NetPnL: -2.2})
+	ts, err := s.ListTrades(10)
+	if err != nil || len(ts) != 2 { t.Fatalf("ListTrades=%d err=%v", len(ts), err) }
+	if ts[0].TS != 2 { t.Fatalf("newest first expected, got TS=%d", ts[0].TS) }
+	st, err := s.PerfStats()
+	if err != nil { t.Fatalf("stats: %v", err) }
+	if st.Trades != 2 || st.Wins != 1 { t.Fatalf("bad counts: %+v", st) }
+	if st.WinRate < 0.49 || st.WinRate > 0.51 { t.Fatalf("winRate=%v want 0.5", st.WinRate) }
+	if st.NetPnL < 1.29 || st.NetPnL > 1.31 { t.Fatalf("netPnL=%v want 1.3", st.NetPnL) }
+}
+
+func TestEquitySeriesAscending(t *testing.T) {
+	s, _ := Open(":memory:")
+	defer s.Close()
+	s.RecordPnLSnapshot(2, 1010, 10)
+	s.RecordPnLSnapshot(1, 1000, 0)
+	eq, err := s.EquitySeries(10)
+	if err != nil || len(eq) != 2 { t.Fatalf("equity=%d err=%v", len(eq), err) }
+	if eq[0].TS != 1 || eq[1].TS != 2 { t.Fatalf("must be ascending: %+v", eq) }
+}
