@@ -51,3 +51,12 @@ func TestKillRequiresTokenAndTripsController(t *testing.T) {
 	if rr.Code != 200 { t.Fatalf("kill status %d", rr.Code) }
 	if !ctrl.KillRequested() { t.Fatal("POST /api/kill must trip the controller kill request") }
 }
+
+func TestHealthzNoAuth(t *testing.T) {
+	s, _, _ := newServer(t)
+	rr := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rr, httptest.NewRequest("GET", "/healthz", nil)) // no token
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "ok") {
+		t.Fatalf("healthz must be 200/ok without auth, got %d %s", rr.Code, rr.Body.String())
+	}
+}

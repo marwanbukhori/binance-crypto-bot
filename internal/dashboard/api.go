@@ -76,6 +76,9 @@ func requirePost(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"status": "ok", "paused": s.ctrl.Paused()})
+	})
 	mux.HandleFunc("/api/status", s.authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"status": s.ctrl.Status(), "paused": s.ctrl.Paused()})
 	}))
