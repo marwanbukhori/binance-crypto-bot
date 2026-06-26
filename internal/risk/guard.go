@@ -1,12 +1,17 @@
 package risk
 
-import "tradebot/internal/config"
+import (
+	"time"
+
+	"tradebot/internal/config"
+)
 
 // Guard enforces daily/weekly loss limits, the kill-switch, and the hard-flatten ceiling.
 type Guard struct {
 	dailyLimit, weeklyLimit, flattenLimit float64
 	dayStart, weekStart, cur              float64
 	killed                                bool
+	lastDay, lastWeek                     int
 }
 
 func NewGuard(cfg config.RiskCfg, startEquity float64) *Guard {
@@ -17,6 +22,8 @@ func NewGuard(cfg config.RiskCfg, startEquity float64) *Guard {
 		dayStart:     startEquity,
 		weekStart:    startEquity,
 		cur:          startEquity,
+		lastDay:      -1,
+		lastWeek:     -1,
 	}
 }
 
@@ -43,4 +50,26 @@ func (g *Guard) Mark(equity float64) {
 func (g *Guard) AllowEntry() bool    { return !g.killed }
 func (g *Guard) Killed() bool        { return g.killed }
 func (g *Guard) ShouldFlatten() bool { return g.DailyLossPct() >= g.flattenLimit }
-func (g *Guard) Reset()              { g.killed = false }
+func (g *Guard) Reset() { g.killed = false }
+
+// RollTime resets the daily/weekly baselines (and re-arms the kill-switch on a new day)
+// when the candle's UTC day/ISO-week boundary is crossed.
+func (g *Guard) RollTime(closeTimeMs int64, equity float64) {
+	t := time.UnixMilli(closeTimeMs).UTC()
+	day := t.Year()*1000 + t.YearDay()
+	year, week := t.ISOWeek()
+	wk := year*100 + week
+	if g.lastDay < 0 {
+		g.lastDay, g.lastWeek = day, wk
+		return
+	}
+	if day != g.lastDay {
+		g.lastDay = day
+		g.StartDay(equity)
+		g.Reset() // re-arm: a new trading day clears yesterday's kill
+	}
+	if wk != g.lastWeek {
+		g.lastWeek = wk
+		g.StartWeek(equity)
+	}
+}
