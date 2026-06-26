@@ -144,6 +144,9 @@ func runLive(cfg config.Config) {
 	if len(cfg.Strategies) > 0 && cfg.Strategies[0].Timeframe != "" {
 		interval = cfg.Strategies[0].Timeframe
 	}
+	if len(cfg.Symbols) > 1 {
+		log.Fatal("live mode currently supports a single symbol (per-symbol exchange filters are not yet wired); set one symbol or use paper mode")
+	}
 	bc := binance.NewClient(cfg.Secrets.BinanceAPIKey, cfg.Secrets.BinanceAPISecret, cfg.Exchange.Testnet)
 	// real starting USDT balance
 	var startUSDT float64

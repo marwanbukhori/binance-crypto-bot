@@ -212,6 +212,20 @@ Flip only after Stage 3 runs without issues. Keep the kill-switch (`/kill` via T
 
 ---
 
+## Before enabling autonomous live trading
+
+The following robustness features are **not yet implemented**. Run in approve-first mode (`autonomous: false`) until they land:
+
+- **Order reconciliation on startup/reconnect** — on restart the bot does not query the exchange for open orders or current balances. A crash mid-order could leave an open position that is invisible to the resumed process. Before flipping `autonomous: true`, add startup reconciliation: fetch open orders and account balances from Binance on every `runLive` start and reconcile them with the local portfolio state.
+
+- **429/418 rate-limit backoff** — Binance responds with HTTP 429 (rate limit) or 418 (IP ban) when too many requests are sent. The current client surfaces these as plain errors; there is no exponential backoff or request-rate tracking. Under high candle frequency or many symbols, this can cause cascading failures. Add a retry layer that honours `Retry-After` headers before autonomous operation.
+
+- **clientOrderId-based retry for timed-out orders** — a MARKET order whose HTTP call times out after Binance accepted it cannot be safely retried without risk of doubling the position. The `newClientOrderId` field is now set on every order (for traceability), but the retry logic that would use it to detect and deduplicate a previously-accepted order is not yet in place. Implement idempotent retry using `GET /api/v3/order?origClientOrderId=<id>` before issuing a duplicate.
+
+Until these are in place: keep `control: { autonomous: false }` and approve every signal via Telegram.
+
+---
+
 ## Kill-switch
 
 Send `/kill` to the Telegram bot at any time to:

@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"tradebot/internal/risk"
 )
 
 func (c *Client) SymbolFilters(symbol string) (risk.Filters, error) {
-	resp, err := c.http.Get(c.base + "/api/v3/exchangeInfo?symbol=" + symbol)
+	resp, err := c.http.Get(c.base + "/api/v3/exchangeInfo?" + url.Values{"symbol": {symbol}}.Encode())
 	if err != nil {
 		return risk.Filters{}, err
 	}

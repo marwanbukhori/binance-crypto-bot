@@ -3,6 +3,7 @@ package binance
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -60,9 +61,8 @@ func (c *Client) do(req *http.Request, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		var b [2048]byte
-		n, _ := resp.Body.Read(b[:])
-		return fmt.Errorf("binance %s: %d %s", req.URL.Path, resp.StatusCode, string(b[:n]))
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		return fmt.Errorf("binance %s: %d %s", req.URL.Path, resp.StatusCode, string(b))
 	}
 	if out == nil {
 		return nil
@@ -103,10 +103,11 @@ type OrderFill struct {
 
 func (c *Client) NewMarketOrder(symbol, side string, qty float64) (OrderFill, error) {
 	params := url.Values{
-		"symbol":   {symbol},
-		"side":     {side},
-		"type":     {"MARKET"},
-		"quantity": {strconv.FormatFloat(qty, 'f', -1, 64)},
+		"symbol":           {symbol},
+		"side":             {side},
+		"type":             {"MARKET"},
+		"quantity":         {strconv.FormatFloat(qty, 'f', -1, 64)},
+		"newClientOrderId": {fmt.Sprintf("tb-%d", c.nowMs())},
 	}
 	req, err := c.signedRequest(http.MethodPost, "/api/v3/order", params)
 	if err != nil {
