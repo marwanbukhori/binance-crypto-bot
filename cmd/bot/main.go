@@ -7,9 +7,11 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 
 	"tradebot/internal/backtest"
 	"tradebot/internal/config"
+	"tradebot/internal/control"
 	"tradebot/internal/engine"
 	"tradebot/internal/execution"
 	"tradebot/internal/marketdata"
@@ -17,6 +19,7 @@ import (
 	"tradebot/internal/risk"
 	"tradebot/internal/store"
 	"tradebot/internal/strategy"
+	"tradebot/internal/telegram"
 	"tradebot/internal/version"
 )
 
@@ -75,6 +78,26 @@ func runPaper(cfg config.Config) {
 	mk := func(sym string) []strategy.Strategy { return []strategy.Strategy{strategy.NewEMACross(sym, interval, nil)} }
 	feeSide := cfg.Risk.FeeModel.Majors / 2 / 100
 	l := engine.NewLive(cfg.Symbols, mk, gate, guard, cool, execution.NewSimulated(feeSide), pf, st, risk.Filters{StepSize: 0.00001, MinQty: 0.00001, MinNotional: 5}, buf)
+
+	// Build Telegram notifier + controller, start poller goroutine.
+	var notifier telegram.Notifier = telegram.NoopNotifier{}
+	ctrl := control.New()
+	if cfg.Secrets.TelegramBotToken != "" {
+		chatID, _ := strconv.ParseInt(cfg.Secrets.TelegramChatID, 10, 64)
+		tgClient := telegram.NewClient(cfg.Secrets.TelegramBotToken)
+		notifier = telegram.NewTelegramNotifier(tgClient, chatID)
+		statusFn := func() string {
+			return fmt.Sprintf("equity=%.2f realized=%.2f positions=%d",
+				pf.Equity(nil), pf.Realized(), len(cfg.Symbols))
+		}
+		positionsFn := func() string {
+			return fmt.Sprintf("open symbols: %v", cfg.Symbols)
+		}
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		_ = cancel2
+		go telegram.Poll(ctx2, tgClient, ctrl, statusFn, positionsFn)
+	}
+	l.SetControl(ctrl, notifier, cfg.Control.Autonomous)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

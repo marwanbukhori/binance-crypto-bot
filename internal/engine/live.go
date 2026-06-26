@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"fmt"
 
+	"tradebot/internal/control"
 	"tradebot/internal/decision"
 	"tradebot/internal/domain"
 	"tradebot/internal/execution"
@@ -12,6 +14,7 @@ import (
 	"tradebot/internal/risk"
 	"tradebot/internal/store"
 	"tradebot/internal/strategy"
+	"tradebot/internal/telegram"
 )
 
 type Live struct {
@@ -28,6 +31,9 @@ type Live struct {
 	open     map[string]*domain.Order
 	idx      map[string]int // per-symbol candle counter for cooldown
 	entryIdx map[string]int // per-symbol candle index at which the position was opened
+	ctrl      *control.Controller
+	notify    telegram.Notifier
+	autonomous bool
 }
 
 func NewLive(syms []string, mkStrats func(string) []strategy.Strategy, gate *risk.Gate, guard *risk.Guard, cool *risk.Cooldown, ex execution.Executor, pf *portfolio.Portfolio, st *store.Store, f risk.Filters, buf *marketdata.Buffer) *Live {
@@ -35,7 +41,13 @@ func NewLive(syms []string, mkStrats func(string) []strategy.Strategy, gate *ris
 	for _, s := range syms {
 		strats[s] = mkStrats(s)
 	}
-	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}}
+	return &Live{syms: syms, strats: strats, gate: gate, guard: guard, cool: cool, exec: ex, pf: pf, store: st, filt: f, buf: buf, open: map[string]*domain.Order{}, idx: map[string]int{}, entryIdx: map[string]int{}, notify: telegram.NoopNotifier{}}
+}
+
+func (l *Live) SetControl(ctrl *control.Controller, n telegram.Notifier, autonomous bool) {
+	l.ctrl = ctrl
+	l.notify = n
+	l.autonomous = autonomous
 }
 
 func (l *Live) Run(ctx context.Context, s marketdata.Stream) error {
@@ -52,6 +64,20 @@ func (l *Live) Run(ctx context.Context, s marketdata.Stream) error {
 			}
 		}
 	}
+}
+
+func (l *Live) execBuy(o domain.Order, c domain.Candle) error {
+	fill, err := l.exec.Execute(o, c)
+	if err != nil {
+		return err
+	}
+	l.pf.Apply(fill)
+	oo := o
+	sym := o.Symbol
+	l.open[sym] = &oo
+	l.entryIdx[sym] = l.idx[sym]
+	_ = l.store.RecordOrder(o)
+	return l.store.RecordFill(fill)
 }
 
 func (l *Live) OnCandle(c domain.Candle) error {
@@ -85,6 +111,18 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	l.guard.Mark(eq)
 	if l.guard.Killed() {
 		_ = l.store.SaveKillState(true, "loss limit", c.CloseTime)
+	}
+
+	// near the top of OnCandle, after computing eq + guard.Mark:
+	if l.ctrl != nil && l.ctrl.KillRequested() {
+		l.guard.Kill()
+		_ = l.store.SaveKillState(true, "manual /kill", c.CloseTime)
+	}
+	// execute any user-approved orders (approve-first) in THIS (engine) goroutine:
+	if l.ctrl != nil {
+		for _, ao := range l.ctrl.DrainApproved() {
+			_ = l.execBuy(ao, c)
+		}
 	}
 
 	pos := l.pf.Position(sym)
@@ -159,6 +197,9 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	if !l.guard.AllowEntry() || l.cool.Blocked(sym, i) {
 		return nil
 	}
+	if l.ctrl != nil && l.ctrl.Paused() {
+		return nil
+	}
 	var deployed float64
 	for s, o := range l.open {
 		var m float64
@@ -175,14 +216,15 @@ func (l *Live) OnCandle(c domain.Candle) error {
 	if err != nil {
 		return nil // rejected (logged via signals)
 	}
-	fill, err := l.exec.Execute(o, c)
-	if err != nil {
+	alert := fmt.Sprintf("BUY %.6f %s @ %.2f — TP %.2f / SL %.2f", o.Qty, o.Symbol, o.Price, o.TPPrice, o.StopPrice)
+	if !l.autonomous && l.ctrl != nil {
+		tok := l.ctrl.RequestApproval(o)
+		_ = l.notify.AskApproval(tok, alert)
+		return nil
+	}
+	if err := l.execBuy(o, c); err != nil {
 		return err
 	}
-	l.pf.Apply(fill)
-	oo := o
-	l.open[sym] = &oo
-	l.entryIdx[sym] = i
-	_ = l.store.RecordOrder(o)
-	return l.store.RecordFill(fill)
+	_ = l.notify.Info(alert)
+	return nil
 }

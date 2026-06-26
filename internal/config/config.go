@@ -47,6 +47,14 @@ type Config struct {
 	Strategies []StrategyCfg `yaml:"strategies"`
 	Risk       RiskCfg       `yaml:"risk"`
 	Secrets    Secrets       `yaml:"-"`
+	Control    struct {
+		Autonomous bool `yaml:"autonomous"`
+	} `yaml:"control"`
+	Notify struct {
+		Telegram struct {
+			Enabled bool `yaml:"enabled"`
+		} `yaml:"telegram"`
+	} `yaml:"notify"`
 }
 
 // Load reads YAML config and overlays secrets from environment variables.
