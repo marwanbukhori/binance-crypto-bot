@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 	"tradebot/internal/dashboard"
 	"tradebot/internal/engine"
 	"tradebot/internal/execution"
+	"tradebot/internal/learning"
 	"tradebot/internal/marketdata"
 	"tradebot/internal/portfolio"
 	"tradebot/internal/risk"
@@ -28,6 +30,10 @@ import (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "backtest" {
 		runBacktest(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "learn" {
+		runLearn()
 		return
 	}
 	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
@@ -123,6 +129,28 @@ func runPaper(cfg config.Config) {
 	if err := l.Run(ctx, stream); err != nil && err != context.Canceled {
 		log.Printf("live run ended: %v", err)
 	}
+}
+
+func runLearn() {
+	st, err := store.Open("tradebot.db")
+	if err != nil {
+		log.Fatalf("store: %v", err)
+	}
+	defer st.Close()
+	ts, _ := st.ListTrades(2000)
+	fmt.Printf("=== Scorecards (net of fees) — %d trades ===\n", len(ts))
+	fmt.Printf("%-18s %-12s %6s %7s %10s %10s\n", "strategy", "regime", "trades", "win%", "net", "expectancy")
+	for _, s := range learning.ScoreByRegime(ts) {
+		fmt.Printf("%-18s %-12s %6d %6.1f%% %10.2f %10.4f\n", s.Strategy, s.Regime, s.Trades, s.WinRate*100, s.NetPnL, s.Expectancy)
+	}
+	proj := learning.MonteCarlo(learning.TradeReturns(ts), 10000, 30, 2000, 20, rand.New(rand.NewSource(1)))
+	fmt.Println("\n=== Monte-Carlo projection (30 trades ahead; PAST PERFORMANCE, NOT A GUARANTEE) ===")
+	if proj.Steps == 0 {
+		fmt.Println("not enough trades to project yet.")
+		return
+	}
+	fmt.Printf("terminal equity from 10000: 5th=%.0f  median=%.0f  95th=%.0f  risk-of-ruin(-20%%)=%.1f%%\n",
+		proj.TermP5, proj.TermP50, proj.TermP95, proj.RiskOfRuinPct)
 }
 
 func runBacktest(args []string) {
