@@ -67,6 +67,7 @@ func runPaper(cfg config.Config) {
 	gate := risk.NewGate(cfg.Risk, cfg.Risk.FeeModel.Majors/100)
 	guard := risk.NewGuard(cfg.Risk, 0)
 	if killed, _ := st.LoadKillState(); killed {
+		guard.Kill()
 		log.Print("kill-switch is ACTIVE from a prior session — entries blocked until reset")
 	}
 	cool := risk.NewCooldown(cfg.Risk.PostLossCooldownCandles)

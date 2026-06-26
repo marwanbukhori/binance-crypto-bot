@@ -50,6 +50,7 @@ func (g *Guard) Mark(equity float64) {
 func (g *Guard) AllowEntry() bool    { return !g.killed }
 func (g *Guard) Killed() bool        { return g.killed }
 func (g *Guard) ShouldFlatten() bool { return g.DailyLossPct() >= g.flattenLimit }
+func (g *Guard) Kill()  { g.killed = true }
 func (g *Guard) Reset() { g.killed = false }
 
 // RollTime resets the daily/weekly baselines (and re-arms the kill-switch on a new day)
